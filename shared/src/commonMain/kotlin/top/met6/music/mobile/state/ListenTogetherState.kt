@@ -293,18 +293,29 @@ object ListenTogetherState {
             
             // Listen for incoming messages in a separate job
             scope.launch {
-                try {
-                    wsSession?.let { session ->
+                wsSession?.let { session ->
+                    try {
                         for (frame in session.incoming) {
                             if (frame is Frame.Text) {
                                 val text = frame.readText()
                                 handleWsMessage(text)
                             }
                         }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        try {
+                            val reason = session.closeReason.await()
+                            val code = reason?.code?.toInt()
+                            if (code == 4004) {
+                                handleLocalExit("房间已过期或被关闭")
+                            } else {
+                                handleLocalExit(reason?.message?.takeIf { it.isNotEmpty() } ?: "连接已断开")
+                            }
+                        } catch (e: Exception) {
+                            handleLocalExit("连接已断开")
+                        }
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    handleLocalExit("连接断开: ${e.message}")
                 }
             }
         } catch (e: Exception) {
@@ -713,6 +724,7 @@ object ListenTogetherState {
     }
 
     fun handleLocalExit(reason: String = "") {
+        if (!isInRoom.value) return
         isInRoom.value = false
         roomCode.value = ""
         roomUuid.value = ""

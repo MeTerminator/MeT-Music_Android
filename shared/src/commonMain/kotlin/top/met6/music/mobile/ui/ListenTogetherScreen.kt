@@ -126,19 +126,6 @@ fun JoinOrCreateLayout() {
                             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                         )
 
-                        OutlinedTextField(
-                            value = avatar,
-                            onValueChange = { avatar = it },
-                            label = { Text("头像 URL (选填)", color = Color.Gray) },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = AppleMusicPink,
-                                unfocusedBorderColor = Color.DarkGray
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
                     }
                 }
             }
