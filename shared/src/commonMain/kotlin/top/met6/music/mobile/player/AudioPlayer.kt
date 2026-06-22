@@ -10,7 +10,7 @@ interface AudioPlayer {
     val durationMs: State<Long>
     val volume: State<Float>
 
-    fun play(urlOrPath: String)
+    fun play(urlOrPath: String, autoPlay: Boolean = true, startPositionMs: Long = 0L)
     fun pause()
     fun resume()
     fun stop()

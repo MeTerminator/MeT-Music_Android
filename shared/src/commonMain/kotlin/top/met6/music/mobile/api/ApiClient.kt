@@ -3,10 +3,42 @@ package top.met6.music.mobile.api
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.request.*
 import io.ktor.serialization.kotlinx.json.*
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.json.Json
 import top.met6.music.mobile.models.*
+
+@Serializable
+data class CreateRoomResponse(
+    val code: String? = null
+)
+
+@Serializable
+data class CheckRoomResponse(
+    val exists: Boolean = false
+)
+
+@Serializable
+data class RenewRoomRequest(
+    val code: String
+)
+
+@Serializable
+data class RenewRoomResponse(
+    val status: String? = null,
+    @SerialName("expires_at") val expiresAt: Double? = null,
+    val detail: String? = null
+)
+
+@Serializable
+data class ServerTimeResponse(
+    @SerialName("server_time") val serverTime: Double
+)
 
 val httpClient = HttpClient {
     install(ContentNegotiation) {
@@ -16,10 +48,12 @@ val httpClient = HttpClient {
             isLenient = true
         })
     }
+    install(WebSockets)
 }
 
 object ApiClient {
     private const val BASE_URL = "https://music.met6.top:444/api/web"
+    private const val ROOM_BASE_URL = "https://music.met6.top:444/api/room"
 
     suspend fun getUserPlaylists(uid: String): UserPlaylistsResponse {
         val timestamp = (0..99999999).random().toString()
@@ -60,5 +94,27 @@ object ApiClient {
         return httpClient.get("$BASE_URL/lyric/new") {
             parameter("id", id)
         }.body()
+    }
+
+    // --- Listen Together Room APIs ---
+    suspend fun checkRoom(code: String): CheckRoomResponse {
+        return httpClient.get("$ROOM_BASE_URL/check") {
+            parameter("code", code)
+        }.body()
+    }
+
+    suspend fun createRoom(): CreateRoomResponse {
+        return httpClient.post("$ROOM_BASE_URL/create").body()
+    }
+
+    suspend fun renewRoom(code: String): RenewRoomResponse {
+        return httpClient.post("$ROOM_BASE_URL/renew") {
+            contentType(ContentType.Application.Json)
+            setBody(RenewRoomRequest(code))
+        }.body()
+    }
+
+    suspend fun getServerTime(): ServerTimeResponse {
+        return httpClient.get("$ROOM_BASE_URL/time").body()
     }
 }

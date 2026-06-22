@@ -76,7 +76,7 @@ class IosAudioPlayer : AudioPlayer {
         progressJob = null
     }
 
-    override fun play(urlOrPath: String) {
+    override fun play(urlOrPath: String, autoPlay: Boolean, startPositionMs: Long) {
         stop()
         
         try {
@@ -126,9 +126,20 @@ class IosAudioPlayer : AudioPlayer {
                             _durationMs.value = (durationSec * 1000).toLong()
                         }
                         player.volume = _volume.value
-                        player.play()
-                        _isPlaying.value = true
-                        startProgressUpdates()
+                        
+                        if (startPositionMs > 0) {
+                            @OptIn(ExperimentalForeignApi::class)
+                            val seekTime = CMTimeMake((startPositionMs).toLong(), 1000)
+                            player.seekToTime(seekTime)
+                        }
+                        
+                        if (autoPlay) {
+                            player.play()
+                            _isPlaying.value = true
+                            startProgressUpdates()
+                        } else {
+                            _isPlaying.value = false
+                        }
                         break
                     } else if (item.status == AVPlayerItemStatusFailed) {
                         println("AVPlayerItem failed to load: ${item.error?.localizedDescription}")

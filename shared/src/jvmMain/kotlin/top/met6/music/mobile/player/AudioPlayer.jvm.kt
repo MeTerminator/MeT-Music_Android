@@ -61,7 +61,7 @@ class JvmAudioPlayer : AudioPlayer {
         progressJob = null
     }
 
-    override fun play(urlOrPath: String) {
+    override fun play(urlOrPath: String, autoPlay: Boolean, startPositionMs: Long) {
         stop()
         
         try {
@@ -73,9 +73,18 @@ class JvmAudioPlayer : AudioPlayer {
                 _isReady.value = true
                 _durationMs.value = media.duration.toMillis().toLong()
                 mp.volume = _volume.value.toDouble()
-                mp.play()
-                _isPlaying.value = true
-                startProgressUpdates()
+                
+                if (startPositionMs > 0) {
+                    mp.seek(Duration.millis(startPositionMs.toDouble()))
+                }
+                
+                if (autoPlay) {
+                    mp.play()
+                    _isPlaying.value = true
+                    startProgressUpdates()
+                } else {
+                    _isPlaying.value = false
+                }
             }
             
             mp.onEndOfMedia = Runnable {

@@ -65,11 +65,7 @@ fun MiniPlayerBar() {
         // Play/Pause button
         IconButton(
             onClick = {
-                if (AppState.player.isPlaying.value) {
-                    AppState.player.pause()
-                } else {
-                    AppState.resumeOrPlay()
-                }
+                AppState.togglePlayPause()
             }
         ) {
             Icon(

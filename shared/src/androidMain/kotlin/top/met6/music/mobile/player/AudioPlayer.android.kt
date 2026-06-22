@@ -52,7 +52,7 @@ class AndroidAudioPlayer(private val context: PlatformContext) : AudioPlayer {
         progressJob = null
     }
 
-    override fun play(urlOrPath: String) {
+    override fun play(urlOrPath: String, autoPlay: Boolean, startPositionMs: Long) {
         stop()
         _isReady.value = false
         _isPlaying.value = false
@@ -63,9 +63,18 @@ class AndroidAudioPlayer(private val context: PlatformContext) : AudioPlayer {
                 _isReady.value = true
                 _durationMs.value = duration.toLong()
                 setVolume(_volume.value, _volume.value)
-                start()
-                _isPlaying.value = true
-                startProgressUpdates()
+                
+                if (startPositionMs > 0) {
+                    seekTo(startPositionMs.toInt())
+                }
+                
+                if (autoPlay) {
+                    start()
+                    _isPlaying.value = true
+                    startProgressUpdates()
+                } else {
+                    _isPlaying.value = false
+                }
             }
             setOnCompletionListener {
                 _isPlaying.value = false

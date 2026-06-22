@@ -83,10 +83,29 @@ class WasmAudioPlayer : AudioPlayer {
         progressJob = null
     }
 
-    override fun play(urlOrPath: String) {
+    override fun play(urlOrPath: String, autoPlay: Boolean, startPositionMs: Long) {
         stop()
         playJs(urlOrPath)
         setVolumeJs(_volume.value.toDouble())
+        
+        if (startPositionMs > 0) {
+            // Give it a tiny delay to initialize JS side before seeking
+            scope.launch {
+                delay(50)
+                seekToJs(startPositionMs / 1000.0)
+            }
+        }
+        
+        if (!autoPlay) {
+            scope.launch {
+                delay(50)
+                pauseJs()
+                _isPlaying.value = false
+            }
+        } else {
+            _isPlaying.value = true
+        }
+        
         startProgressUpdates()
     }
 

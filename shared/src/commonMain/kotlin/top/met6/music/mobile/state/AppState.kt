@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import top.met6.music.mobile.api.ApiClient
 import top.met6.music.mobile.models.Playlist
 import top.met6.music.mobile.models.Song
@@ -28,6 +29,7 @@ sealed class Screen {
     object Settings : Screen()
     object CacheManagerDetail : Screen()
     object DesktopLyricSettings : Screen()
+    object ListenTogether : Screen()
 }
 
 enum class PlaybackMode {
@@ -71,6 +73,19 @@ object AppState {
         }
         return false
     }
+    
+    // --- Global UI ---
+    val globalToastMessage = mutableStateOf("")
+    private var toastJob: Job? = null
+    
+    fun showToast(msg: String) {
+        globalToastMessage.value = msg
+        toastJob?.cancel()
+        toastJob = scope.launch {
+            kotlinx.coroutines.delay(2000)
+            globalToastMessage.value = ""
+        }
+    }
 
     // --- User state ---
     val isLoggedIn = mutableStateOf(false)
@@ -92,6 +107,7 @@ object AppState {
     val currentLyricIndex = mutableStateOf(-1)
     val isFullScreenPlayer = mutableStateOf(false)
     val soundQuality = mutableStateOf("hq") // web, hq, sq, rs, dts, q360v1, q360v2, qai
+    val syncThresholdSec = mutableStateOf(0.3f)
 
     // --- Cache sizes ---
     val playlistCacheSize = mutableStateOf(0.0)
@@ -173,6 +189,10 @@ object AppState {
     }
 
     fun seekTo(positionMs: Long) {
+        if (ListenTogetherState.isInRoom.value) {
+            ListenTogetherState.sendSeek(positionMs / 1000.0)
+            return
+        }
         player.seekTo(positionMs)
         savedPlaybackPositionMs.value = positionMs
         platformStorage.saveText("playback_position", positionMs.toString())
@@ -199,7 +219,11 @@ object AppState {
         player = createAudioPlayer(context)
         player.onPlaybackComplete = {
             scope.launch {
-                nextSong(isAutoPlay = true)
+                if (ListenTogetherState.isInRoom.value) {
+                    ListenTogetherState.sendNext()
+                } else {
+                    nextSong(isAutoPlay = true)
+                }
             }
         }
 
@@ -217,6 +241,13 @@ object AppState {
             try {
                 playbackMode.value = PlaybackMode.valueOf(savedMode)
             } catch (e: Exception) {}
+        }
+        
+        val savedSyncThreshold = platformStorage.getText("sync_threshold")
+        if (!savedSyncThreshold.isNullOrEmpty()) {
+            syncThresholdSec.value = savedSyncThreshold.toFloatOrNull() ?: 0.3f
+        } else {
+            syncThresholdSec.value = 0.3f
         }
 
         val savedOffset = platformStorage.getText("lyric_offset")
@@ -384,18 +415,44 @@ object AppState {
 
     fun loadUserPlaylists(qq: String) {
         userPlaylistsLoading.value = true
+        
+        // 1. Immediately display cached text info synchronously
+        val cachedNickname = platformStorage.getText("nickname")
+        if (!cachedNickname.isNullOrEmpty()) {
+            nickname.value = cachedNickname
+        } else {
+            nickname.value = qq
+        }
+        val cachedAvatar = platformStorage.getText("avatar_url")
+        if (!cachedAvatar.isNullOrEmpty()) {
+            avatarUrl.value = cachedAvatar
+        }
+
         scope.launch {
+            // 2. Fetch and display cached playlists first
+            try {
+                val cached = storage.getPlaylistsFromCache(qq)
+                if (cached != null) {
+                    playlists.value = cached
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // 3. Fetch from network and refresh
             try {
                 val response = ApiClient.getUserPlaylists(qq)
                 storage.savePlaylistsToCache(qq, response.playlist)
+                
+                platformStorage.saveText("nickname", response.username ?: qq)
+                platformStorage.saveText("avatar_url", response.avatarUrl ?: "")
+
                 playlists.value = response.playlist
                 nickname.value = response.username ?: qq
                 avatarUrl.value = response.avatarUrl ?: ""
             } catch (e: Exception) {
-                // Load from cache
-                storage.getPlaylistsFromCache(qq)?.let {
-                    playlists.value = it
-                }
+                // Network error: we keep showing the cached data that was loaded earlier.
+                e.printStackTrace()
             } finally {
                 userPlaylistsLoading.value = false
             }
@@ -464,6 +521,14 @@ object AppState {
     // --- Audio Playback Functions ---
  
     fun playPlaylist(songsList: List<Song>, startIndex: Int) {
+        if (ListenTogetherState.isInRoom.value) {
+            val song = songsList.getOrNull(startIndex)
+            if (song != null) {
+                ListenTogetherState.addSong(song)
+                showToast("已添加到一起听歌播放列表")
+            }
+            return
+        }
         if (songsList.isEmpty()) return
         savedPlaybackPositionMs.value = 0L
         currentQueue.value = songsList
@@ -483,6 +548,12 @@ object AppState {
     }
  
     fun nextSong(isAutoPlay: Boolean = false) {
+        if (ListenTogetherState.isInRoom.value) {
+            if (!isAutoPlay) {
+                ListenTogetherState.sendNext()
+            }
+            return
+        }
         val queue = currentQueue.value
         if (queue.isEmpty()) return
         savedPlaybackPositionMs.value = 0L
@@ -523,6 +594,10 @@ object AppState {
     }
  
     fun prevSong() {
+        if (ListenTogetherState.isInRoom.value) {
+            ListenTogetherState.sendPrev()
+            return
+        }
         val queue = currentQueue.value
         if (queue.isEmpty()) return
         savedPlaybackPositionMs.value = 0L
@@ -549,11 +624,27 @@ object AppState {
     }
  
     fun resumeOrPlay() {
+        if (ListenTogetherState.isInRoom.value) {
+            ListenTogetherState.sendPlayOrPause()
+            return
+        }
         val song = currentSong.value
         if (song != null && !player.isReady.value) {
             playSong(song)
         } else {
             player.resume()
+        }
+    }
+
+    fun togglePlayPause() {
+        if (ListenTogetherState.isInRoom.value) {
+            ListenTogetherState.sendPlayOrPause()
+        } else {
+            if (player.isPlaying.value) {
+                player.pause()
+            } else {
+                resumeOrPlay()
+            }
         }
     }
 

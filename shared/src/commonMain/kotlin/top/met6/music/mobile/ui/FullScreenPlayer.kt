@@ -523,7 +523,7 @@ fun PortraitPager(
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.1f))
                                 .clickable {
-                                    if (isPlaying) AppState.player.pause() else AppState.resumeOrPlay()
+                                    AppState.togglePlayPause()
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -676,7 +676,7 @@ fun PlaybackControls(isLandscape: Boolean, onShowQueue: () -> Unit) {
                 .clip(CircleShape)
                 .background(Color.White.copy(alpha = 0.1f))
                 .clickable {
-                    if (isPlaying) AppState.player.pause() else AppState.resumeOrPlay()
+                    AppState.togglePlayPause()
                 }
         ) {
             Icon(

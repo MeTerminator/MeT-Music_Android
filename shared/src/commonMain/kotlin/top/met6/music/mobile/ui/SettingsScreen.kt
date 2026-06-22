@@ -444,6 +444,52 @@ fun SettingsScreen() {
             }
             
             Spacer(modifier = Modifier.height(24.dp))
+            // Listen Together Settings Section
+            Text(
+                text = "一起听歌",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+            )
+            
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = CardBackground),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "同步跳跃阈值: ${((AppState.syncThresholdSec.value * 10).toInt() / 10f)}s",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "阈值越小，两端进度差距稍微过大就会频繁触发跳转同步，导致卡顿；阈值越大，允许的进度误差越大，但在网络波动时音频会更平顺。",
+                        color = Color.Gray,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                    )
+                    Slider(
+                        value = AppState.syncThresholdSec.value,
+                        onValueChange = { 
+                            AppState.syncThresholdSec.value = it
+                        },
+                        onValueChangeFinished = {
+                            AppState.platformStorage.saveText("sync_threshold", AppState.syncThresholdSec.value.toString())
+                        },
+                        valueRange = 0.1f..5.0f,
+                        steps = 48, // (5.0 - 0.1) / 0.1 - 1
+                        colors = SliderDefaults.colors(
+                            thumbColor = AppleMusicPink,
+                            activeTrackColor = AppleMusicPink
+                        )
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
             
             // Cache Settings Section
             Text(

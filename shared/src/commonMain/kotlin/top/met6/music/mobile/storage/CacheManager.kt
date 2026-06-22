@@ -180,26 +180,57 @@ class CacheManager(private val storage: PlatformStorage) {
             return cachedUrl
         }
         
+        var shouldWaitSync = false
+        var syncResultUrl: String? = null
+        
         activeDownloadsMutex.withLock {
             if (!activeDownloads.contains(songId)) {
                 activeDownloads.add(songId)
-                downloadScope.launch {
+                
+                try {
+                    val headResponse: HttpResponse = httpClient.head(remoteUrl)
+                    val contentLength = headResponse.headers["Content-Length"]?.toLongOrNull() ?: 0L
+                    
+                    if (contentLength in 1..15_728_640) { // 15MB
+                        shouldWaitSync = true
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                
+                if (shouldWaitSync) {
                     try {
                         val response: HttpResponse = httpClient.get(remoteUrl)
                         val bytes = response.body<ByteArray>()
                         storage.saveCacheFile("songs", songId, bytes)
+                        syncResultUrl = storage.getCacheUrl("songs", songId)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     } finally {
-                        activeDownloadsMutex.withLock {
-                            activeDownloads.remove(songId)
+                        activeDownloads.remove(songId)
+                    }
+                } else {
+                    downloadScope.launch {
+                        try {
+                            val response: HttpResponse = httpClient.get(remoteUrl)
+                            val bytes = response.body<ByteArray>()
+                            storage.saveCacheFile("songs", songId, bytes)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        } finally {
+                            activeDownloadsMutex.withLock {
+                                activeDownloads.remove(songId)
+                            }
                         }
                     }
                 }
+            } else {
+                // If it's already downloading, we can't easily wait for it unless we use a CompletableFuture or Deferred.
+                // For simplicity, we just fallback to remoteUrl if it's already downloading.
             }
         }
         
-        return remoteUrl
+        return syncResultUrl ?: remoteUrl
     }
 
     suspend fun saveLyricToCache(songId: String, lyric: LyricResponse) {

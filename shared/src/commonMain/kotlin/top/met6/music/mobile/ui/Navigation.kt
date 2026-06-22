@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ fun AppNavigation() {
                     is Screen.Settings -> SettingsScreen()
                     is Screen.CacheManagerDetail -> CacheManagerScreen()
                     is Screen.DesktopLyricSettings -> DesktopLyricSettingsScreen()
+                    is Screen.ListenTogether -> ListenTogetherScreen()
                 }
             }
 
@@ -67,7 +69,20 @@ fun AppNavigation() {
                             )
                         )
                         NavigationBarItem(
-                            selected = currentScreen is Screen.Settings || currentScreen is Screen.CacheManagerDetail,
+                            selected = currentScreen is Screen.ListenTogether,
+                            onClick = { AppState.navigateTo(Screen.ListenTogether) },
+                            icon = { Icon(imageVector = Icons.Default.Share, contentDescription = "Listen Together") },
+                            label = { Text("一起听", fontSize = 11.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = AppleMusicPink,
+                                selectedTextColor = AppleMusicPink,
+                                unselectedIconColor = Color.Gray,
+                                unselectedTextColor = Color.Gray,
+                                indicatorColor = Color.Transparent
+                            )
+                        )
+                        NavigationBarItem(
+                            selected = currentScreen is Screen.Settings || currentScreen is Screen.CacheManagerDetail || currentScreen is Screen.DesktopLyricSettings,
                             onClick = { AppState.navigateTo(Screen.Settings) },
                             icon = { Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings") },
                             label = { Text("设置", fontSize = 11.sp) },
@@ -80,6 +95,26 @@ fun AppNavigation() {
                             )
                         )
                     }
+                }
+            }
+        }
+
+        // Global Toast
+        if (AppState.globalToastMessage.value.isNotEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(bottom = 120.dp),
+                contentAlignment = androidx.compose.ui.Alignment.BottomCenter
+            ) {
+                Surface(
+                    color = Color(0xCC000000),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = AppState.globalToastMessage.value,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        fontSize = 14.sp
+                    )
                 }
             }
         }

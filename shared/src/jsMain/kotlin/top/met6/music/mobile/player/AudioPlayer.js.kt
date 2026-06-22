@@ -51,7 +51,7 @@ class JsAudioPlayer : AudioPlayer {
         progressJob = null
     }
 
-    override fun play(urlOrPath: String) {
+    override fun play(urlOrPath: String, autoPlay: Boolean, startPositionMs: Long) {
         stop()
         
         val aud = org.w3c.dom.Audio(urlOrPath) as HTMLAudioElement
@@ -61,6 +61,14 @@ class JsAudioPlayer : AudioPlayer {
         aud.onloadedmetadata = {
             _isReady.value = true
             _durationMs.value = (aud.duration * 1000).toLong()
+            
+            if (startPositionMs > 0) {
+                aud.currentTime = startPositionMs / 1000.0
+            }
+            
+            if (autoPlay) {
+                aud.play()
+            }
         }
 
         aud.onplay = {
@@ -85,8 +93,12 @@ class JsAudioPlayer : AudioPlayer {
             _isPlaying.value = false
             stopProgressUpdates()
         }
-
-        aud.play()
+        
+        // Let onloadedmetadata trigger play if autoPlay is true, but HTML5 sometimes requires direct play() to load.
+        // Wait, onloadedmetadata will be called automatically once it loads metadata.
+        // If we don't call play() now, it might not start loading on some mobile browsers.
+        // Let's call aud.load() to force loading.
+        aud.load()
     }
 
     override fun pause() {

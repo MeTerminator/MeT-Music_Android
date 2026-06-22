@@ -188,17 +188,19 @@ fun PlaylistHeader(playlist: Playlist, onPlayAll: () -> Unit) {
         
         Spacer(modifier = Modifier.height(20.dp))
         
-        Button(
-            onClick = onPlayAll,
-            colors = ButtonDefaults.buttonColors(containerColor = AppleMusicPink),
-            shape = RoundedCornerShape(24.dp),
-            modifier = Modifier
-                .fillMaxWidth(0.6f)
-                .height(48.dp)
-        ) {
-            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(text = "播放全部", color = Color.White, fontWeight = FontWeight.Bold)
+        if (!top.met6.music.mobile.state.ListenTogetherState.isInRoom.value) {
+            Button(
+                onClick = onPlayAll,
+                colors = ButtonDefaults.buttonColors(containerColor = AppleMusicPink),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.6f)
+                    .height(48.dp)
+            ) {
+                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = "播放全部", color = Color.White, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
