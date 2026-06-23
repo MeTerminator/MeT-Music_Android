@@ -678,6 +678,19 @@ fun RoomLayout() {
 
             item {
                 Spacer(modifier = Modifier.height(24.dp))
+                
+                Button(
+                    onClick = { ListenTogetherState.deleteRoom() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(25.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Room", tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("解散房间", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                
+                Spacer(modifier = Modifier.height(32.dp))
             }
         }
     }
