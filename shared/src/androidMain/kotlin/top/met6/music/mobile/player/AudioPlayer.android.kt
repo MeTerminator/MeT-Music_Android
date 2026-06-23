@@ -1,19 +1,27 @@
 package top.met6.music.mobile.player
 
-import android.media.MediaPlayer
-import androidx.compose.runtime.MutableState
+import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
 import top.met6.music.mobile.storage.PlatformContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
 
 class AndroidAudioPlayer(private val context: PlatformContext) : AudioPlayer {
     override var onPlaybackComplete: (() -> Unit)? = null
-    private var mediaPlayer: MediaPlayer? = null
+    private var exoPlayer: ExoPlayer? = null
     
     private val _isPlaying = mutableStateOf(false)
     override val isPlaying: State<Boolean> = _isPlaying
@@ -37,9 +45,9 @@ class AndroidAudioPlayer(private val context: PlatformContext) : AudioPlayer {
         progressJob?.cancel()
         progressJob = scope.launch {
             while (true) {
-                mediaPlayer?.let { mp ->
-                    if (mp.isPlaying) {
-                        _currentPositionMs.value = mp.currentPosition.toLong()
+                exoPlayer?.let { player ->
+                    if (player.isPlaying) {
+                        _currentPositionMs.value = player.currentPosition
                     }
                 }
                 delay(30)
@@ -52,80 +60,105 @@ class AndroidAudioPlayer(private val context: PlatformContext) : AudioPlayer {
         progressJob = null
     }
 
+    @OptIn(UnstableApi::class)
     override fun play(urlOrPath: String, autoPlay: Boolean, startPositionMs: Long) {
         stop()
         _isReady.value = false
         _isPlaying.value = false
         
-        val mp = MediaPlayer().apply {
-            setDataSource(urlOrPath)
-            setOnPreparedListener {
-                _isReady.value = true
-                _durationMs.value = duration.toLong()
-                setVolume(_volume.value, _volume.value)
-                
-                if (startPositionMs > 0) {
-                    seekTo(startPositionMs.toInt())
+        val player = ExoPlayer.Builder(context.context)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .setUsage(C.USAGE_MEDIA)
+                    .build(),
+                /* handleAudioFocus = */ true
+            )
+            .build()
+        
+        player.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                when (playbackState) {
+                    Player.STATE_READY -> {
+                        _isReady.value = true
+                        _durationMs.value = player.duration.coerceAtLeast(0L)
+                    }
+                    Player.STATE_ENDED -> {
+                        _isPlaying.value = false
+                        _currentPositionMs.value = _durationMs.value
+                        stopProgressUpdates()
+                        onPlaybackComplete?.invoke()
+                    }
+                    Player.STATE_IDLE, Player.STATE_BUFFERING -> {
+                        // no-op
+                    }
                 }
-                
-                if (autoPlay) {
-                    start()
-                    _isPlaying.value = true
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                _isPlaying.value = isPlaying
+                if (isPlaying) {
                     startProgressUpdates()
                 } else {
-                    _isPlaying.value = false
+                    stopProgressUpdates()
                 }
             }
-            setOnCompletionListener {
-                _isPlaying.value = false
-                _currentPositionMs.value = duration.toLong()
-                stopProgressUpdates()
-                onPlaybackComplete?.invoke()
-            }
-            setOnErrorListener { _, _, _ ->
+
+            override fun onPlayerError(error: PlaybackException) {
+                error.printStackTrace()
                 _isReady.value = false
                 _isPlaying.value = false
                 stopProgressUpdates()
-                true
             }
-            prepareAsync()
+        })
+        
+        // Build the media URI
+        val mediaUri = when {
+            urlOrPath.startsWith("file://") -> Uri.parse(urlOrPath)
+            urlOrPath.startsWith("/") -> Uri.fromFile(File(urlOrPath))
+            else -> Uri.parse(urlOrPath)
         }
-        mediaPlayer = mp
+        
+        val mediaItem = MediaItem.fromUri(mediaUri)
+        player.setMediaItem(mediaItem)
+        player.volume = _volume.value
+        player.playWhenReady = autoPlay
+        player.prepare()
+        
+        if (startPositionMs > 0) {
+            player.seekTo(startPositionMs)
+        }
+        
+        exoPlayer = player
     }
 
     override fun pause() {
-        mediaPlayer?.let { mp ->
-            if (mp.isPlaying) {
-                mp.pause()
-                _isPlaying.value = false
-                stopProgressUpdates()
+        exoPlayer?.let { player ->
+            if (player.isPlaying) {
+                player.pause()
             }
         }
     }
 
     override fun resume() {
-        mediaPlayer?.let { mp ->
-            if (!mp.isPlaying && _isReady.value) {
-                mp.start()
-                _isPlaying.value = true
-                startProgressUpdates()
+        exoPlayer?.let { player ->
+            if (!player.isPlaying && _isReady.value) {
+                player.play()
             }
         }
     }
 
     override fun stop() {
         stopProgressUpdates()
-        mediaPlayer?.let { mp ->
+        exoPlayer?.let { player ->
             try {
-                if (mp.isPlaying) {
-                    mp.stop()
-                }
+                player.stop()
+                player.release()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            mp.release()
         }
-        mediaPlayer = null
+        exoPlayer = null
         _isPlaying.value = false
         _isReady.value = false
         _currentPositionMs.value = 0L
@@ -133,9 +166,9 @@ class AndroidAudioPlayer(private val context: PlatformContext) : AudioPlayer {
     }
 
     override fun seekTo(positionMs: Long) {
-        mediaPlayer?.let { mp ->
+        exoPlayer?.let { player ->
             if (_isReady.value) {
-                mp.seekTo(positionMs.toInt())
+                player.seekTo(positionMs)
                 _currentPositionMs.value = positionMs
             }
         }
@@ -144,7 +177,7 @@ class AndroidAudioPlayer(private val context: PlatformContext) : AudioPlayer {
     override fun setVolume(vol: Float) {
         val clamped = vol.coerceIn(0.0f, 1.0f)
         _volume.value = clamped
-        mediaPlayer?.setVolume(clamped, clamped)
+        exoPlayer?.volume = clamped
     }
 
     override fun release() {

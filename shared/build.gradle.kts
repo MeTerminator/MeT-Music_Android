@@ -48,6 +48,7 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.androidx.activity.compose)
             implementation("androidx.media:media:1.7.0")
+            implementation("androidx.media3:media3-exoplayer:1.6.1")
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)

@@ -170,12 +170,12 @@ class CacheManager(private val storage: PlatformStorage) {
     }
 
     suspend fun getCachedSongUrl(songId: String): String? {
-        return storage.getCacheUrl("songs", songId)
+        return storage.getCacheUrl("songs", "$songId.mp3")
     }
 
     suspend fun getSongAudioUrl(songId: String, remoteUrl: String): String {
         if (remoteUrl.isEmpty()) return ""
-        val cachedUrl = storage.getCacheUrl("songs", songId)
+        val cachedUrl = storage.getCacheUrl("songs", "$songId.mp3")
         if (cachedUrl != null) {
             return cachedUrl
         }
@@ -191,7 +191,7 @@ class CacheManager(private val storage: PlatformStorage) {
                     val headResponse: HttpResponse = httpClient.head(remoteUrl)
                     val contentLength = headResponse.headers["Content-Length"]?.toLongOrNull() ?: 0L
                     
-                    if (contentLength in 1..15_728_640) { // 15MB
+                    if (contentLength <= 104_857_600L) { // 100MB
                         shouldWaitSync = true
                     }
                 } catch (e: Exception) {
@@ -202,8 +202,8 @@ class CacheManager(private val storage: PlatformStorage) {
                     try {
                         val response: HttpResponse = httpClient.get(remoteUrl)
                         val bytes = response.body<ByteArray>()
-                        storage.saveCacheFile("songs", songId, bytes)
-                        syncResultUrl = storage.getCacheUrl("songs", songId)
+                        storage.saveCacheFile("songs", "$songId.mp3", bytes)
+                        syncResultUrl = storage.getCacheUrl("songs", "$songId.mp3")
                     } catch (e: Exception) {
                         e.printStackTrace()
                     } finally {
@@ -214,7 +214,7 @@ class CacheManager(private val storage: PlatformStorage) {
                         try {
                             val response: HttpResponse = httpClient.get(remoteUrl)
                             val bytes = response.body<ByteArray>()
-                            storage.saveCacheFile("songs", songId, bytes)
+                            storage.saveCacheFile("songs", "$songId.mp3", bytes)
                         } catch (e: Exception) {
                             e.printStackTrace()
                         } finally {
