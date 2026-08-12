@@ -27,22 +27,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.met6.music.mobile.models.Song
 import top.met6.music.mobile.state.AppState
-import top.met6.music.mobile.lyric.LyricLine
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.font.FontFamily
+import top.met6.amll.AppleMusicLyricPlayer
+import top.met6.amll.AppleMusicLyricPlayerStyle
 import met_music_mobile.shared.generated.resources.Res
 import met_music_mobile.shared.generated.resources.spotify_mix
 import org.jetbrains.compose.resources.Font
@@ -591,7 +586,13 @@ fun PlaybackScrubber() {
         AppState.savedPlaybackPositionMs.value
     }
     
-    val progress = if (duration > 0) pos.toFloat() / duration.toFloat() else 0f
+    var draggedPositionMs by remember(duration) { mutableStateOf<Long?>(null) }
+    val displayedPositionMs = draggedPositionMs ?: pos
+    val progress = if (duration > 0) {
+        displayedPositionMs.toFloat() / duration.toFloat()
+    } else {
+        0f
+    }
     
     Column(
         modifier = Modifier
@@ -601,8 +602,11 @@ fun PlaybackScrubber() {
         Slider(
             value = progress,
             onValueChange = {
-                val targetMs = (it * duration).toLong()
-                AppState.seekTo(targetMs)
+                draggedPositionMs = (it * duration).toLong().coerceIn(0L, duration)
+            },
+            onValueChangeFinished = {
+                draggedPositionMs?.let(AppState::seekTo)
+                draggedPositionMs = null
             },
             colors = SliderDefaults.colors(
                 thumbColor = Color.White,
@@ -616,7 +620,7 @@ fun PlaybackScrubber() {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(text = formatTime(pos), color = Color.Gray, fontSize = 12.sp)
+            Text(text = formatTime(displayedPositionMs), color = Color.Gray, fontSize = 12.sp)
             Text(text = formatTime(duration), color = Color.Gray, fontSize = 12.sp)
         }
     }
@@ -717,12 +721,9 @@ fun PlaybackControls(isLandscape: Boolean, onShowQueue: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LyricsView(showTranslation: Boolean = true) {
     val lines = AppState.lyricLines.value
-    val activeIndex = AppState.currentLyricIndex.value
-    val lazyListState = rememberLazyListState()
     val spotifyFont = if (AppState.useSpotifyFont.value) {
         Font(Res.font.spotify_mix)
     } else {
@@ -736,134 +737,32 @@ fun LyricsView(showTranslation: Boolean = true) {
         }
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val viewportHeightDp = maxHeight
-
-        // Scroll active lyric line to the 1/5-from-top position.
-        // contentPadding(top = viewportHeight/5) ensures scrollOffset=0 lands
-        // the item exactly at viewport/5 from the top — no manual delta needed.
-        LaunchedEffect(activeIndex) {
-            if (activeIndex >= 0 && activeIndex < lines.size) {
-                lazyListState.animateScrollToItem(
-                    index = activeIndex,
-                    scrollOffset = 0
-                )
-            }
-        }
-
-        if (lines.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(text = "暂无歌词", color = Color.Gray, fontSize = 16.sp)
-            }
-        } else {
-            val topPaddingDp = viewportHeightDp / 5
-            val bottomPaddingDp = viewportHeightDp - topPaddingDp
-
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-                contentPadding = PaddingValues(top = topPaddingDp, bottom = bottomPaddingDp)
-            ) {
-                itemsIndexed(lines) { idx, line ->
-                    val isActive = idx == activeIndex
-                    val currentTimeMs = AppState.player.currentPositionMs.value
-                    
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                val targetPos = line.startTimeMs - AppState.lyricOffsetMs.value
-                                AppState.seekTo(targetPos.coerceAtLeast(0L))
-                            },
-                        horizontalAlignment = Alignment.Start
-                    ) {
-                        val baseLyricSize = AppState.lyricFontSize.value
-                        val fontSizeSp = (if (isActive) baseLyricSize + 4 else baseLyricSize).sp
-                        val lineHeightSp = (fontSizeSp.value * 1.3f).sp
-
-                        if (line.syllables.isEmpty()) {
-                            // Normal LRC line
-                            val color = if (isActive) Color.White else Color.White.copy(alpha = 0.4f)
-                            Text(
-                                text = line.text,
-                                color = color,
-                                fontSize = fontSizeSp,
-                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-                                lineHeight = lineHeightSp,
-                                fontFamily = lyricFontFamily,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            // Karaoke QRC line - using FlowRow for automatic wrapping and progressive highlight
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Start
-                            ) {
-                                line.syllables.forEach { syllable ->
-                                    val elapsedMs = (currentTimeMs + AppState.lyricOffsetMs.value) - syllable.timeOffsetMs
-                                    val durationMs = syllable.durationMs
-                                    val progress = when {
-                                        !isActive -> 0f
-                                        elapsedMs < 0 -> 0f
-                                        elapsedMs >= durationMs -> 1f
-                                        durationMs > 0 -> elapsedMs.toFloat() / durationMs.toFloat()
-                                        else -> 1f
-                                    }
-
-                                    Box {
-                                        // Base layer (dimmed)
-                                        Text(
-                                            text = syllable.text,
-                                            color = Color.White.copy(alpha = 0.4f),
-                                            fontSize = fontSizeSp,
-                                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-                                            lineHeight = lineHeightSp,
-                                            fontFamily = lyricFontFamily
-                                        )
-
-                                        if (isActive && progress > 0f) {
-                                            // Overlay layer (white, clipped to progress)
-                                            val activeFontSizeSp = (baseLyricSize + 4).sp
-                                            val activeLineHeightSp = (activeFontSizeSp.value * 1.3f).sp
-                                            Text(
-                                                text = syllable.text,
-                                                color = Color.White,
-                                                fontSize = activeFontSizeSp,
-                                                fontWeight = FontWeight.Bold,
-                                                lineHeight = activeLineHeightSp,
-                                                fontFamily = lyricFontFamily,
-                                                modifier = Modifier.drawWithContent {
-                                                    clipRect(right = size.width * progress) {
-                                                        this@drawWithContent.drawContent()
-                                                    }
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        
-                        line.translation?.let { tran ->
-                            if (showTranslation && tran.isNotEmpty() && tran != "//") {
-                                val baseTranSize = AppState.translationFontSize.value
-                                val tranFontSizeSp = (if (isActive) baseTranSize + 2 else baseTranSize).sp
-                                Text(
-                                    text = tran,
-                                    color = if (isActive) Color.White.copy(alpha = 0.8f) else Color.Gray,
-                                    fontSize = tranFontSizeSp,
-                                    lineHeight = (tranFontSizeSp.value * 1.3f).sp,
-                                    fontFamily = lyricFontFamily,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    AppleMusicLyricPlayer(
+        lyricLines = lines,
+        // Preserve the pre-AMLL contract: lyrics consume the exact same media clock
+        // shown by the scrubber and used by AppState, with no route-specific clock.
+        currentTimeMs = AppState.player.currentPositionMs.value + AppState.lyricOffsetMs.value,
+        isPlaying = AppState.player.isPlaying.value,
+        showTranslation = showTranslation,
+        style = AppleMusicLyricPlayerStyle(
+            fontSize = AppState.lyricFontSize.value.sp,
+            lineWidthFraction = 1f,
+        ),
+        fontFamily = lyricFontFamily,
+        modifier = Modifier.fillMaxSize(),
+        emptyContent = {
+            Text(text = "暂无歌词", color = Color.Gray, fontSize = 16.sp)
+        },
+        onLineClick = { line ->
+            // `line.startTime` may be advanced by the lyric optimizer (up to 600 ms)
+            // to make the visual transition begin early. Seeking must use the first
+            // real timed word, otherwise the audio lands before the selected lyric.
+            val lyricPosition = line.words.firstOrNull { it.word.isNotBlank() }?.startTime
+                ?: line.startTime
+            val targetPosition = lyricPosition - AppState.lyricOffsetMs.value
+            AppState.seekTo(targetPosition.coerceAtLeast(0L))
+        },
+    )
 }
 
 private fun formatTime(ms: Long): String {

@@ -96,6 +96,12 @@ object ApiClient {
         }.body()
     }
 
+    suspend fun getTtmlLyric(mid: String): TtmlLyricResponse {
+        return httpClient.get("$BASE_URL/lyric/ttml") {
+            parameter("mid", mid)
+        }.body()
+    }
+
     // --- Listen Together Room APIs ---
     suspend fun checkRoom(code: String): CheckRoomResponse {
         return httpClient.get("$ROOM_BASE_URL/check") {

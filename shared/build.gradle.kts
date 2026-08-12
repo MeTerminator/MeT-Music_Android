@@ -10,16 +10,6 @@ plugins {
 }
 
 kotlin {
-    listOf(
-        iosArm64(),
-        iosSimulatorArm64()
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
-            baseName = "Shared"
-            isStatic = true
-        }
-    }
-
     jvm()
 
     js {
@@ -60,6 +50,9 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation("org.jetbrains.compose.material:material-icons-core:1.7.3")
+            // Source is supplied by settings.gradle.kts' composite build:
+            // ../applemusic-like-lyrics_kotlin -> :lyrics.
+            implementation("top.met6:applemusic-like-lyrics:0.1.0")
 
 
             // Ktor Client & Serialization
@@ -72,9 +65,6 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
-        }
-        iosMain.dependencies {
-            implementation(libs.ktor.client.darwin)
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.okhttp)

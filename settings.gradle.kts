@@ -36,3 +36,12 @@ include(":androidApp")
 include(":desktopApp")
 include(":shared")
 include(":webApp")
+
+// During local development, resolve the published-looking dependency below
+// from the sibling source repository. CI and packaged builds can remove this
+// block to resolve top.met6:applemusic-like-lyrics:0.1.0 from a Maven repo.
+includeBuild("../applemusic-like-lyrics_kotlin") {
+    dependencySubstitution {
+        substitute(module("top.met6:applemusic-like-lyrics")).using(project(":lyrics"))
+    }
+}

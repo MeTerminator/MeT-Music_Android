@@ -13,7 +13,8 @@ import top.met6.music.mobile.models.Song
 import top.met6.music.mobile.player.AudioPlayer
 import top.met6.music.mobile.player.MediaSessionController
 import top.met6.music.mobile.player.createAudioPlayer
-import top.met6.music.mobile.lyric.LyricLine
+import top.met6.amll.LyricLine
+import top.met6.amll.TtmlParser
 import top.met6.music.mobile.lyric.LyricParser
 import top.met6.music.mobile.storage.CacheManager
 import top.met6.music.mobile.storage.PlatformContext
@@ -56,6 +57,9 @@ object AppState {
     lateinit var mediaSessionController: MediaSessionController
     private val scope = CoroutineScope(Dispatchers.Main)
     private var isInitialized = false
+    private var standaloneStreamingSongId: String? = null
+    private var standaloneStreamingUrl: String? = null
+    private var accurateSeekGeneration = 0L
 
     // --- Navigation ---
     val currentScreen = mutableStateOf<Screen>(Screen.Login)
@@ -170,12 +174,7 @@ object AppState {
                     // Pre-load lyrics for saved song
                     scope.launch {
                         try {
-                            var lyricResponse = storage.getLyricFromCache(song.id)
-                            if (lyricResponse == null) {
-                                lyricResponse = ApiClient.getSongLyric(song.id)
-                                storage.saveLyricToCache(song.id, lyricResponse)
-                            }
-                            lyricLines.value = LyricParser.parse(lyricResponse)
+                            lyricLines.value = loadLyrics(song)
                             updateLyricIndex(pos)
                         } catch (e: Exception) {
                             e.printStackTrace()
@@ -193,10 +192,62 @@ object AppState {
             ListenTogetherState.sendSeek(positionMs / 1000.0)
             return
         }
-        player.seekTo(positionMs)
         savedPlaybackPositionMs.value = positionMs
         platformStorage.saveText("playback_position", positionMs.toString())
         updateLyricIndex(positionMs)
+
+        val song = currentSong.value
+        val remoteUrl = standaloneStreamingUrl
+        val needsLocalAsset = player.accurateSeekRequiresLocalFile &&
+            song != null &&
+            standaloneStreamingSongId == song.id &&
+            !remoteUrl.isNullOrBlank()
+        if (!needsLocalAsset) {
+            player.seekTo(positionMs)
+            return
+        }
+
+        // AVFoundation may report the requested time while a progressively downloaded
+        // MP3 is decoding from an approximate byte offset. Stop audible playback until
+        // the already-running background cache provides a fully indexable local asset.
+        val generation = ++accurateSeekGeneration
+        val shouldResume = player.isPlaying.value
+        player.pause()
+        scope.launch {
+            try {
+                val localUrl = storage.getSongAudioUrl(
+                    songId = song.id,
+                    remoteUrl = remoteUrl,
+                    waitForCache = true,
+                )
+                if (generation != accurateSeekGeneration ||
+                    currentSong.value?.id != song.id ||
+                    ListenTogetherState.isInRoom.value
+                ) return@launch
+
+                // Future seeks can now use AVPlayer directly against the complete file.
+                standaloneStreamingUrl = null
+                player.play(
+                    urlOrPath = localUrl,
+                    autoPlay = shouldResume,
+                    startPositionMs = positionMs,
+                )
+            } catch (error: Exception) {
+                error.printStackTrace()
+                if (generation == accurateSeekGeneration && currentSong.value?.id == song.id) {
+                    // Preserve basic seeking if caching genuinely fails.
+                    player.seekTo(positionMs)
+                    if (shouldResume) player.resume()
+                    showToast("精确跳转缓存失败，已使用串流跳转")
+                }
+            }
+        }
+    }
+
+    fun clearStandaloneStreamingSource() {
+        accurateSeekGeneration++
+        standaloneStreamingSongId = null
+        standaloneStreamingUrl = null
     }
 
     fun init(context: PlatformContext) {
@@ -649,40 +700,29 @@ object AppState {
     }
 
     private fun playSong(song: Song) {
+        clearStandaloneStreamingSource()
         player.stop()
         lyricLines.value = emptyList()
         currentLyricIndex.value = -1
  
         scope.launch {
             try {
-                // Check local cache first
-                var audioUrl = storage.getCachedSongUrl(song.id)
-                
-                if (audioUrl == null) {
-                    var remoteUrl = storage.getCachedRemoteUrl(song.id, soundQuality.value)
-                    if (remoteUrl == null) {
-                        // 1. Fetch song url
-                        val urlResponse = ApiClient.getSongUrl(song.id, soundQuality.value)
-                        val rawUrl = urlResponse.data.firstOrNull()?.url
-                        if (rawUrl.isNullOrEmpty()) {
-                            nextSong() // skip on error
-                            return@launch
-                        }
-                        remoteUrl = rawUrl
-                        storage.saveRemoteUrlToCache(song.id, soundQuality.value, rawUrl)
+                // Standalone playback always starts from the network immediately.
+                // Caching runs in the background and never delays AVPlayer preparation.
+                var remoteUrl = storage.getCachedRemoteUrl(song.id, soundQuality.value)
+                if (remoteUrl == null) {
+                    val urlResponse = ApiClient.getSongUrl(song.id, soundQuality.value)
+                    val rawUrl = urlResponse.data.firstOrNull()?.url
+                    if (rawUrl.isNullOrEmpty()) {
+                        nextSong() // skip on error
+                        return@launch
                     }
-     
-                    // 2. Resolve cached audio file url
-                    audioUrl = storage.getSongAudioUrl(song.id, remoteUrl)
+                    remoteUrl = rawUrl
+                    storage.saveRemoteUrlToCache(song.id, soundQuality.value, rawUrl)
                 }
-                
-                // 3. Load & Parse lyrics
-                var lyricResponse = storage.getLyricFromCache(song.id)
-                if (lyricResponse == null) {
-                    lyricResponse = ApiClient.getSongLyric(song.id)
-                    storage.saveLyricToCache(song.id, lyricResponse)
-                }
-                lyricLines.value = LyricParser.parse(lyricResponse)
+                val audioUrl = storage.getSongAudioUrl(song.id, remoteUrl, waitForCache = false)
+                standaloneStreamingSongId = song.id
+                standaloneStreamingUrl = remoteUrl
 
                 mediaSessionController.updateMetadata(
                     title = song.name,
@@ -690,12 +730,16 @@ object AppState {
                     coverUrl = song.bestCoverUrl,
                     durationMs = song.durationMs
                 )
- 
-                // 4. Update cache size metrics
+
+                // Hand the remote asset to the platform player before lyrics, cache
+                // metrics, or preloading perform any additional network/disk work.
+                val startupPos = savedPlaybackPositionMs.value
+                player.play(audioUrl, startPositionMs = startupPos)
+                if (startupPos > 0L) savedPlaybackPositionMs.value = 0L
+
+                // Lyrics are independent of audio preparation and can arrive later.
+                lyricLines.value = loadLyrics(song)
                 updateCacheSizes()
- 
-                // 5. Play!
-                player.play(audioUrl)
 
                 // Save song metadata for cache management
                 storage.saveSongMetadata(song, soundQuality.value)
@@ -706,19 +750,6 @@ object AppState {
                     preloadSong(next)
                 }
  
-                // 6. Seek to startup position if needed
-                val startupPos = savedPlaybackPositionMs.value
-                if (startupPos > 0L) {
-                    var checks = 0
-                    while (!player.isReady.value && checks < 100) {
-                        kotlinx.coroutines.delay(50)
-                        checks++
-                    }
-                    player.seekTo(startupPos)
-                    savedPlaybackPositionMs.value = 0L // reset
-                }
- 
-                // 7. Save state
                 savePlaybackState()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -781,7 +812,7 @@ object AppState {
                         }
                     }
                     if (remoteUrl != null) {
-                        storage.getSongAudioUrl(song.id, remoteUrl)
+                        storage.getSongAudioUrl(song.id, remoteUrl, waitForCache = false)
                     }
                 }
 
@@ -792,6 +823,8 @@ object AppState {
                         lyricResponse = ApiClient.getSongLyric(song.id)
                         storage.saveLyricToCache(song.id, lyricResponse)
                     }
+                    // Keep the same request order as playback: ordinary lyric first, TTML second.
+                    ApiClient.getTtmlLyric(song.lyricMid)
                 } catch (e: Exception) {
                     // Ignore lyric preloading errors
                 }
@@ -801,6 +834,27 @@ object AppState {
         }
     }
  
+    suspend fun loadLyrics(song: Song): List<LyricLine> {
+        var ordinaryResponse = storage.getLyricFromCache(song.id)
+        if (ordinaryResponse == null) {
+            ordinaryResponse = ApiClient.getSongLyric(song.id)
+            storage.saveLyricToCache(song.id, ordinaryResponse)
+        }
+        val ordinaryLines = LyricParser.parse(ordinaryResponse)
+
+        return try {
+            val ttmlResponse = ApiClient.getTtmlLyric(song.lyricMid)
+            if (ttmlResponse.status == "success" && !ttmlResponse.content.isNullOrBlank()) {
+                TtmlParser.parseAmll(ttmlResponse.content).lines.ifEmpty { ordinaryLines }
+            } else {
+                ordinaryLines
+            }
+        } catch (error: Exception) {
+            error.printStackTrace()
+            ordinaryLines
+        }
+    }
+
     private fun updateLyricIndex(currentTimeMs: Long) {
         val adjustedTime = currentTimeMs + lyricOffsetMs.value + lyricLeadMs.value // dynamic offset + dynamic early transition lead
         val lines = lyricLines.value
@@ -809,10 +863,10 @@ object AppState {
         var index = -1
         for (i in lines.indices) {
             val line = lines[i]
-            if (adjustedTime >= line.startTimeMs && adjustedTime <= line.endTimeMs) {
+            if (adjustedTime >= line.startTime && adjustedTime <= line.endTime) {
                 index = i
                 break
-            } else if (adjustedTime < line.startTimeMs) {
+            } else if (adjustedTime < line.startTime) {
                 // If it is before the first line or between lines
                 if (i > 0) {
                     index = i - 1
@@ -820,7 +874,7 @@ object AppState {
                 break
             }
         }
-        if (index == -1 && adjustedTime >= lines.last().endTimeMs) {
+        if (index == -1 && adjustedTime >= lines.last().endTime) {
             index = lines.size - 1
         }
         currentLyricIndex.value = index

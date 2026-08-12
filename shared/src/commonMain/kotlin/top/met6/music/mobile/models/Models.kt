@@ -48,6 +48,7 @@ data class Album(
 @Serializable
 data class Song(
     val id: String,
+    val mid: String? = null,
     val name: String,
     @SerialName("ar") val artists: List<Artist> = emptyList(),
     @SerialName("al") val album: Album? = null,
@@ -55,6 +56,9 @@ data class Song(
     val coverSize: CoverSizes? = null,
     @SerialName("dt") val durationMs: Long = 0
 ) {
+    val lyricMid: String
+        get() = mid?.takeIf(String::isNotBlank) ?: id
+
     val bestCoverUrl: String
         get() = cover ?: coverSize?.l ?: coverSize?.m ?: coverSize?.s ?: album?.picUrl ?: ""
 
@@ -104,4 +108,10 @@ data class LyricResponse(
     val qrc: String? = null,
     val qrctrans: String? = null,
     val qrcroma: String? = null
+)
+
+@Serializable
+data class TtmlLyricResponse(
+    val status: String,
+    val content: String? = null,
 )

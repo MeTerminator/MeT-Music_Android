@@ -7,7 +7,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -19,7 +21,7 @@ import top.met6.music.mobile.models.LyricResponse
 class CacheManager(private val storage: PlatformStorage) {
     private val downloadScope = CoroutineScope(Dispatchers.Default)
     private val activeDownloadsMutex = Mutex()
-    private val activeDownloads = mutableSetOf<String>()
+    private val activeDownloads = mutableMapOf<String, Deferred<String?>>()
 
     private val remoteUrlCache = mutableMapOf<String, Pair<String, Long>>()
     private val remoteUrlMutex = Mutex()
@@ -173,64 +175,54 @@ class CacheManager(private val storage: PlatformStorage) {
         return storage.getCacheUrl("songs", "$songId.mp3")
     }
 
-    suspend fun getSongAudioUrl(songId: String, remoteUrl: String): String {
+    /**
+     * Returns a source according to the playback mode.
+     *
+     * Standalone playback uses the remote URL immediately and only caches in the
+     * background. Listen Together waits for the shared download and returns a local
+     * file so every participant seeks against a fully indexed asset.
+     */
+    suspend fun getSongAudioUrl(
+        songId: String,
+        remoteUrl: String,
+        waitForCache: Boolean,
+    ): String {
         if (remoteUrl.isEmpty()) return ""
-        val cachedUrl = storage.getCacheUrl("songs", "$songId.mp3")
-        if (cachedUrl != null) {
-            return cachedUrl
+        if (!waitForCache) {
+            // Streaming must never wait for disk or an existing download. The remote
+            // URL remains the playback source even when a cached copy already exists.
+            downloadScope.launch { cacheSong(songId, remoteUrl) }
+            return remoteUrl
         }
-        
-        var shouldWaitSync = false
-        var syncResultUrl: String? = null
-        
-        activeDownloadsMutex.withLock {
-            if (!activeDownloads.contains(songId)) {
-                activeDownloads.add(songId)
-                
+
+        return cacheSong(songId, remoteUrl)
+            ?: error("Unable to cache song $songId before synchronized playback")
+    }
+
+    private suspend fun cacheSong(songId: String, remoteUrl: String): String? {
+        storage.getCacheUrl("songs", "$songId.mp3")?.let { return it }
+
+        val download = activeDownloadsMutex.withLock {
+            activeDownloads[songId] ?: downloadScope.async {
                 try {
-                    val headResponse: HttpResponse = httpClient.head(remoteUrl)
-                    val contentLength = headResponse.headers["Content-Length"]?.toLongOrNull() ?: 0L
-                    
-                    if (contentLength <= 104_857_600L) { // 100MB
-                        shouldWaitSync = true
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                    val response: HttpResponse = httpClient.get(remoteUrl)
+                    val bytes = response.body<ByteArray>()
+                    storage.saveCacheFile("songs", "$songId.mp3", bytes)
+                    storage.getCacheUrl("songs", "$songId.mp3")
+                } catch (error: Exception) {
+                    error.printStackTrace()
+                    null
                 }
-                
-                if (shouldWaitSync) {
-                    try {
-                        val response: HttpResponse = httpClient.get(remoteUrl)
-                        val bytes = response.body<ByteArray>()
-                        storage.saveCacheFile("songs", "$songId.mp3", bytes)
-                        syncResultUrl = storage.getCacheUrl("songs", "$songId.mp3")
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    } finally {
-                        activeDownloads.remove(songId)
-                    }
-                } else {
-                    downloadScope.launch {
-                        try {
-                            val response: HttpResponse = httpClient.get(remoteUrl)
-                            val bytes = response.body<ByteArray>()
-                            storage.saveCacheFile("songs", "$songId.mp3", bytes)
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        } finally {
-                            activeDownloadsMutex.withLock {
-                                activeDownloads.remove(songId)
-                            }
-                        }
-                    }
-                }
-            } else {
-                // If it's already downloading, we can't easily wait for it unless we use a CompletableFuture or Deferred.
-                // For simplicity, we just fallback to remoteUrl if it's already downloading.
+            }.also { activeDownloads[songId] = it }
+        }
+
+        return try {
+            download.await()
+        } finally {
+            activeDownloadsMutex.withLock {
+                if (activeDownloads[songId] === download) activeDownloads.remove(songId)
             }
         }
-        
-        return syncResultUrl ?: remoteUrl
     }
 
     suspend fun saveLyricToCache(songId: String, lyric: LyricResponse) {

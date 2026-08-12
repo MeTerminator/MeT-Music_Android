@@ -4,9 +4,13 @@ import androidx.compose.runtime.State
 import top.met6.music.mobile.storage.PlatformContext
 
 interface AudioPlayer {
+    /** True when this platform needs a complete local asset for reliable random access. */
+    val accurateSeekRequiresLocalFile: Boolean get() = false
     val isPlaying: State<Boolean>
     val isReady: State<Boolean>
     val currentPositionMs: State<Long>
+    /** Platform presentation clock used by time-synchronized UI such as lyrics. */
+    val presentationPositionMs: State<Long>
     val durationMs: State<Long>
     val volume: State<Float>
 

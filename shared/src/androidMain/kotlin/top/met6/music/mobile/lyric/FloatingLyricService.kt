@@ -240,7 +240,7 @@ fun FloatingLyricContent() {
                     val line = lines[activeIndex]
                     val currentTimeMs = AppState.player.currentPositionMs.value
 
-                    if (line.syllables.isEmpty()) {
+                    if (line.words.size <= 1) {
                         Text(
                             text = line.text,
                             color = selectedColor,
@@ -255,9 +255,9 @@ fun FloatingLyricContent() {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = if (alignment == "center") Arrangement.Center else Arrangement.Start
                         ) {
-                            line.syllables.forEach { syllable ->
-                                val elapsedMs = (currentTimeMs + AppState.lyricOffsetMs.value) - syllable.timeOffsetMs
-                                val durationMs = syllable.durationMs
+                            line.words.forEach { word ->
+                                val elapsedMs = (currentTimeMs + AppState.lyricOffsetMs.value) - word.startTime
+                                val durationMs = word.endTime - word.startTime
                                 val progress = when {
                                     elapsedMs < 0 -> 0f
                                     elapsedMs >= durationMs -> 1f
@@ -268,7 +268,7 @@ fun FloatingLyricContent() {
                                 Box(modifier = Modifier.padding(end = 2.dp)) {
                                     val baseColor = if (selectedColor == Color.White) Color.White.copy(alpha = 0.4f) else Color.White
                                     Text(
-                                        text = syllable.text,
+                                        text = word.word,
                                         color = baseColor,
                                         fontSize = fontSize.sp,
                                         fontWeight = FontWeight.Bold,
@@ -277,7 +277,7 @@ fun FloatingLyricContent() {
 
                                     if (progress > 0f) {
                                         Text(
-                                            text = syllable.text,
+                                            text = word.word,
                                             color = selectedColor,
                                             fontSize = fontSize.sp,
                                             fontWeight = FontWeight.Bold,

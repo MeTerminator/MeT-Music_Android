@@ -1,156 +1,85 @@
 package top.met6.music.mobile.lyric
 
+import top.met6.amll.LyricLine
+import top.met6.amll.LyricWord
 import top.met6.music.mobile.models.LyricResponse
 
-data class Syllable(
-    val text: String,
-    val timeOffsetMs: Long,
-    val durationMs: Long
-)
-
-data class LyricLine(
-    val startTimeMs: Long,
-    val endTimeMs: Long,
-    val text: String,
-    val syllables: List<Syllable> = emptyList(),
-    var translation: String? = null,
-    var romalrc: String? = null
-)
-
+/** Converts the service's ordinary LRC/QRC response to the shared AMLL model. */
 object LyricParser {
-
     fun parse(response: LyricResponse): List<LyricLine> {
-        val qrcString = response.qrc
-        if (!qrcString.isNullOrEmpty()) {
-            val qrcLines = parseQrc(qrcString)
-            if (qrcLines.isNotEmpty()) {
-                val translationLrc = response.qrctrans ?: response.lrctrans
-                if (!translationLrc.isNullOrEmpty()) {
-                    alignTranslations(qrcLines, parseLrc(translationLrc))
-                }
-                val romaLrc = response.qrcroma
-                if (!romaLrc.isNullOrEmpty()) {
-                    alignRoma(qrcLines, parseLrc(romaLrc))
-                }
-                return qrcLines
+        response.qrc?.takeIf(String::isNotBlank)?.let { qrc ->
+            val parsed = parseQrc(qrc)
+            if (parsed.isNotEmpty()) {
+                val translated = alignSubLine(parsed, response.qrctrans ?: response.lrctrans, roman = false)
+                return alignSubLine(translated, response.qrcroma, roman = true)
             }
         }
-
-        val lrcString = response.lrc
-        if (!lrcString.isNullOrEmpty()) {
-            val lrcLines = parseLrc(lrcString)
-            val translationLrc = response.lrctrans
-            if (!translationLrc.isNullOrEmpty()) {
-                alignTranslations(lrcLines, parseLrc(translationLrc))
-            }
-            return lrcLines
+        response.lrc?.takeIf(String::isNotBlank)?.let { lrc ->
+            return alignSubLine(parseLrc(lrc), response.lrctrans, roman = false)
         }
-
         return emptyList()
     }
 
-    private fun decodeXmlEntities(text: String): String {
-        return text.replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .replace("&apos;", "'")
-            .replace("&#39;", "'")
-    }
-
-    private fun parseLrc(lrcText: String): List<LyricLine> {
-        val lines = lrcText.split("\n", "\r\n")
-        val result = mutableListOf<LyricLine>()
+    private fun parseLrc(source: String): List<LyricLine> {
         val regex = Regex("""^\[(\d+):(\d+)(?:\.(\d+))?\](.*)$""")
-
-        for (line in lines) {
-            val match = regex.matchEntire(line.trim()) ?: continue
-            val min = match.groupValues[1].toLong()
-            val sec = match.groupValues[2].toLong()
-            val msStr = match.groupValues[3]
-            val ms = if (msStr.isEmpty()) 0L else {
-                val padded = msStr.padEnd(3, '0').substring(0, 3)
-                padded.toLong()
-            }
-            val startTimeMs = min * 60 * 1000 + sec * 1000 + ms
-            val text = decodeXmlEntities(match.groupValues[4].trim())
-            if (text.isNotEmpty() && !text.contains("纯音乐，请您欣赏")) {
-                result.add(LyricLine(
-                    startTimeMs = startTimeMs,
-                    endTimeMs = startTimeMs + 3000L,
-                    text = text
-                ))
-            }
-        }
-
-        for (i in 0 until result.size - 1) {
-            val current = result[i]
-            val next = result[i + 1]
-            result[i] = current.copy(endTimeMs = next.startTimeMs)
+        val result = source.lines().mapNotNull { raw ->
+            val match = regex.matchEntire(raw.trim()) ?: return@mapNotNull null
+            val fraction = match.groupValues[3]
+            val millis = if (fraction.isEmpty()) 0 else fraction.padEnd(3, '0').take(3).toLong()
+            val start = match.groupValues[1].toLong() * 60_000 + match.groupValues[2].toLong() * 1_000 + millis
+            val text = decodeEntities(match.groupValues[4].trim())
+            if (text.isBlank() || "纯音乐，请您欣赏" in text) return@mapNotNull null
+            LyricLine(
+                words = listOf(LyricWord(start, start + 3_000, text)),
+                startTime = start,
+                endTime = start + 3_000,
+            )
+        }.toMutableList()
+        for (index in 0 until result.lastIndex) {
+            result[index] = result[index].copy(
+                words = result[index].words.map { it.copy(endTime = result[index + 1].startTime) },
+                endTime = result[index + 1].startTime,
+            )
         }
         return result
     }
 
-    private fun parseQrc(qrcText: String): List<LyricLine> {
-        val lines = qrcText.split("\n", "\r\n")
-        val result = mutableListOf<LyricLine>()
-        val lineTimeRegex = Regex("""^\[(\d+),(\d+)\]""")
-        val syllableRegex = Regex("""([^{()]*)[{()](\d+),(\d+)[})]""")
-
-        for (line in lines) {
-            val match = lineTimeRegex.find(line) ?: continue
-            val startTimeMs = match.groupValues[1].toLong()
-            val durationMs = match.groupValues[2].toLong()
-            val endTimeMs = startTimeMs + durationMs
-            
-            val content = line.substring(match.value.length).trim()
-            if (content.isEmpty()) continue
-
-            val syllables = mutableListOf<Syllable>()
-            val matches = syllableRegex.findAll(content)
-            val fullTextBuilder = StringBuilder()
-
-            for (sMatch in matches) {
-                val text = decodeXmlEntities(sMatch.groupValues[1])
-                val offset = sMatch.groupValues[2].toLong()
-                val duration = sMatch.groupValues[3].toLong()
-                
-                syllables.add(Syllable(text, offset, duration))
-                fullTextBuilder.append(text)
-            }
-
-            val displayText = if (syllables.isEmpty()) decodeXmlEntities(content) else fullTextBuilder.toString()
-            if (displayText.isNotEmpty()) {
-                result.add(LyricLine(
-                    startTimeMs = startTimeMs,
-                    endTimeMs = endTimeMs,
-                    text = displayText,
-                    syllables = syllables
-                ))
-            }
+    private fun parseQrc(source: String): List<LyricLine> {
+        val lineTime = Regex("""^\[(\d+),(\d+)\]""")
+        val wordTime = Regex("""([^{}()]*)[({](\d+),(\d+)[})]""")
+        return source.lines().mapNotNull { raw ->
+            val lineMatch = lineTime.find(raw) ?: return@mapNotNull null
+            val lineStart = lineMatch.groupValues[1].toLong()
+            val lineEnd = lineStart + lineMatch.groupValues[2].toLong()
+            val content = raw.substring(lineMatch.value.length).trim()
+            if (content.isEmpty()) return@mapNotNull null
+            val words = wordTime.findAll(content).mapNotNull { match ->
+                val text = decodeEntities(match.groupValues[1])
+                if (text.isEmpty()) null else {
+                    val start = match.groupValues[2].toLong()
+                    LyricWord(start, start + match.groupValues[3].toLong(), text)
+                }
+            }.toList().ifEmpty { listOf(LyricWord(lineStart, lineEnd, decodeEntities(content))) }
+            LyricLine(words = words, startTime = lineStart, endTime = lineEnd)
         }
-        return result
     }
 
-    private fun alignTranslations(base: List<LyricLine>, translations: List<LyricLine>) {
-        for (line in base) {
-            val match = translations.firstOrNull { 
-                kotlin.math.abs(it.startTimeMs - line.startTimeMs) < 150 
-            }
-            if (match != null && match.text != "//" && match.text.isNotEmpty()) {
-                line.translation = match.text
+    private fun alignSubLine(base: List<LyricLine>, source: String?, roman: Boolean): List<LyricLine> {
+        if (source.isNullOrBlank()) return base
+        val subLines = parseLrc(source)
+        return base.map { line ->
+            val sub = subLines.firstOrNull { kotlin.math.abs(it.startTime - line.startTime) < 150 }
+                ?.text?.takeIf { it.isNotBlank() && it != "//" }
+            when {
+                sub == null -> line
+                roman -> line.copy(romanLyric = sub)
+                else -> line.copy(translatedLyric = sub)
             }
         }
     }
 
-    private fun alignRoma(base: List<LyricLine>, roma: List<LyricLine>) {
-        for (line in base) {
-            val match = roma.firstOrNull { 
-                kotlin.math.abs(it.startTimeMs - line.startTimeMs) < 150 
-            }
-            if (match != null && match.text != "//" && match.text.isNotEmpty()) {
-                line.romalrc = match.text
-            }
-        }
-    }
+    private fun decodeEntities(text: String): String = text
+        .replace("&lt;", "<").replace("&gt;", ">")
+        .replace("&quot;", "\"").replace("&apos;", "'")
+        .replace("&#39;", "'").replace("&amp;", "&")
 }

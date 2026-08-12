@@ -24,6 +24,7 @@ class JvmAudioPlayer : AudioPlayer {
     
     private val _currentPositionMs = mutableStateOf(0L)
     override val currentPositionMs: State<Long> = _currentPositionMs
+    override val presentationPositionMs: State<Long> = _currentPositionMs
     
     private val _durationMs = mutableStateOf(0L)
     override val durationMs: State<Long> = _durationMs

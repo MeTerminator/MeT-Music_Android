@@ -29,9 +29,9 @@ class LyricParserTest {
 
         println("Parsed lines count: ${'$'}{lines.size}")
         for (line in lines) {
-            println("Line: startTime=${'$'}{line.startTimeMs}, endTime=${'$'}{line.endTimeMs}, text='${'$'}{line.text}'")
-            for (syllable in line.syllables) {
-                println("  Syllable: text='${'$'}{syllable.text}', start=${'$'}{syllable.timeOffsetMs}, duration=${'$'}{syllable.durationMs}")
+            println("Line: startTime=${'$'}{line.startTime}, endTime=${'$'}{line.endTime}, text='${'$'}{line.text}'")
+            for (word in line.words) {
+                println("  Word: text='${'$'}{word.word}', start=${'$'}{word.startTime}, end=${'$'}{word.endTime}")
             }
         }
 
@@ -39,13 +39,13 @@ class LyricParserTest {
         assertEquals(2, lines.size)
 
         val firstLine = lines[0]
-        assertEquals(168L, firstLine.startTimeMs)
-        assertEquals(425L, firstLine.endTimeMs)
+        assertEquals(168L, firstLine.startTime)
+        assertEquals(425L, firstLine.endTime)
         assertEquals("洛天依 - 潮声回响", firstLine.text)
 
         val secondLine = lines[1]
-        assertEquals(23501L, secondLine.startTimeMs)
-        assertEquals(28349L, secondLine.endTimeMs)
+        assertEquals(23501L, secondLine.startTime)
+        assertEquals(28349L, secondLine.endTime)
         assertEquals("绞断的弦 能否重新演奏", secondLine.text)
     }
 }

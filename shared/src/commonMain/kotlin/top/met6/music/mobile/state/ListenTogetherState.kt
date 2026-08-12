@@ -46,6 +46,7 @@ data class RoomLog(
 @Serializable
 data class RoomSong(
     val id: String,
+    val mid: String? = null,
     val name: String,
     val artists: List<Artist> = emptyList(),
     val album: Album? = null,
@@ -58,6 +59,7 @@ data class RoomSong(
 fun RoomSong.toSong(): Song {
     return Song(
         id = this.id,
+        mid = this.mid,
         name = this.name,
         artists = this.artists,
         album = this.album,
@@ -86,6 +88,7 @@ fun Song.toRoomSong(): RoomSong {
 
     return RoomSong(
         id = this.id,
+        mid = this.mid,
         name = this.name,
         artists = this.artists,
         album = this.album,
@@ -176,6 +179,9 @@ object ListenTogetherState {
     private var serverTimeOffset = 0L
     private var lastRoomStateServerTime = 0L
     private var lastRoomStateLocalTime = 0L
+    private var roomPlaybackSongId: String? = null
+    private var loadingRoomSongId: String? = null
+    private var roomPlaybackGeneration = 0L
 
     fun getSessionId(): String {
         var sessionId = AppState.platformStorage.getText("sessionId")
@@ -271,6 +277,9 @@ object ListenTogetherState {
     private suspend fun connectRoom(code: String) {
         errorMessage.value = ""
         expectingFirstState = true
+        roomPlaybackSongId = null
+        loadingRoomSongId = null
+        roomPlaybackGeneration++
         roomCode.value = code
         
         val userId = getSessionId()
@@ -374,16 +383,15 @@ object ListenTogetherState {
         val currentRoomSong = room.playlist.getOrNull(room.currentSongIndex)?.toSong()
         if (currentRoomSong != null) {
             val localPlaySong = AppState.currentSong.value
-            val isSameSong = localPlaySong?.id == currentRoomSong.id
+            val isSameSong = localPlaySong?.id == currentRoomSong.id &&
+                roomPlaybackSongId == currentRoomSong.id
             
             val now = getCurrentTimeMs()
             val serverNow = now + serverTimeOffset
             val elapsed = if (room.isPlaying) (serverNow - serverTime) / 1000.0 else 0.0
-            val targetSeekMs = ((room.seekPosition + elapsed) * 1000).toLong()
-
             if (!isSameSong) {
                 AppState.currentSong.value = currentRoomSong
-                playRoomSong(currentRoomSong, room.isPlaying, targetSeekMs)
+                playRoomSong(currentRoomSong)
             } else {
                 if (room.isPlaying && !AppState.player.isPlaying.value) {
                     AppState.player.resume()
@@ -419,10 +427,9 @@ object ListenTogetherState {
             val now = getCurrentTimeMs()
             val serverNow = now + serverTimeOffset
             val elapsed = if (room.isPlaying) (serverNow - serverTime) / 1000.0 else 0.0
-            val targetSeekMs = ((room.seekPosition + elapsed) * 1000).toLong()
-
             val localPlaySong = AppState.currentSong.value
-            val isSameSong = localPlaySong?.id == currentRoomSong.id
+            val isSameSong = localPlaySong?.id == currentRoomSong.id &&
+                roomPlaybackSongId == currentRoomSong.id
 
             if (isSameSong) {
                 if (room.isPlaying && !AppState.player.isPlaying.value) {
@@ -439,12 +446,17 @@ object ListenTogetherState {
                 }
             } else {
                 AppState.currentSong.value = currentRoomSong
-                playRoomSong(currentRoomSong, room.isPlaying, targetSeekMs)
+                playRoomSong(currentRoomSong)
             }
         }
     }
 
-    private fun playRoomSong(song: Song, startPlay: Boolean, seekMs: Long) {
+    private fun playRoomSong(song: Song) {
+        if (loadingRoomSongId == song.id) return
+        val generation = ++roomPlaybackGeneration
+        loadingRoomSongId = song.id
+        roomPlaybackSongId = null
+        AppState.clearStandaloneStreamingSource()
         AppState.player.stop()
         AppState.currentSong.value = song
         AppState.lyricLines.value = emptyList()
@@ -464,15 +476,10 @@ object ListenTogetherState {
                         remoteUrl = rawUrl
                         AppState.storage.saveRemoteUrlToCache(song.id, AppState.soundQuality.value, rawUrl)
                     }
-                    audioUrl = AppState.storage.getSongAudioUrl(song.id, remoteUrl)
+                    // Room playback must use a complete local asset. This gives every
+                    // participant stable duration and sample-accurate random access.
+                    audioUrl = AppState.storage.getSongAudioUrl(song.id, remoteUrl, waitForCache = true)
                 }
-                
-                var lyricResponse = AppState.storage.getLyricFromCache(song.id)
-                if (lyricResponse == null) {
-                    lyricResponse = ApiClient.getSongLyric(song.id)
-                    AppState.storage.saveLyricToCache(song.id, lyricResponse)
-                }
-                AppState.lyricLines.value = LyricParser.parse(lyricResponse)
                 
                 AppState.mediaSessionController.updateMetadata(
                     title = song.name,
@@ -481,12 +488,36 @@ object ListenTogetherState {
                     durationMs = song.durationMs
                 )
                 
+                if (generation != roomPlaybackGeneration || !isInRoom.value) return@launch
+                val latestRoom = roomDetails.value
+                val latestSong = latestRoom?.playlist
+                    ?.getOrNull(latestRoom.currentSongIndex)
+                    ?.toSong()
+                if (latestRoom == null || latestSong?.id != song.id) return@launch
+
+                // Download time must not make a participant start several seconds behind.
+                // Recalculate the room cursor immediately before opening the local file.
+                val serverNow = getCurrentTimeMs() + serverTimeOffset
+                val elapsed = if (latestRoom.isPlaying) {
+                    (serverNow - lastRoomStateServerTime).coerceAtLeast(0L) / 1000.0
+                } else {
+                    0.0
+                }
+                val latestSeekMs = ((latestRoom.seekPosition + elapsed) * 1000).toLong()
+                roomPlaybackSongId = song.id
+                AppState.player.play(
+                    audioUrl,
+                    autoPlay = latestRoom.isPlaying,
+                    startPositionMs = latestSeekMs,
+                )
+
+                AppState.lyricLines.value = AppState.loadLyrics(song)
                 AppState.updateCacheSizes()
-                AppState.player.play(audioUrl, autoPlay = startPlay, startPositionMs = seekMs)
-                
                 AppState.storage.saveSongMetadata(song, AppState.soundQuality.value)
             } catch (e: Exception) {
                 e.printStackTrace()
+            } finally {
+                if (generation == roomPlaybackGeneration) loadingRoomSongId = null
             }
         }
     }
@@ -726,6 +757,9 @@ object ListenTogetherState {
     fun handleLocalExit(reason: String = "") {
         if (!isInRoom.value) return
         isInRoom.value = false
+        roomPlaybackGeneration++
+        roomPlaybackSongId = null
+        loadingRoomSongId = null
         roomCode.value = ""
         roomUuid.value = ""
         roomDetails.value = null
