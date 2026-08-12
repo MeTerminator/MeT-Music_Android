@@ -208,6 +208,7 @@ fun PlaylistHeader(playlist: Playlist, onPlayAll: () -> Unit) {
 @Composable
 fun SongRow(song: Song, index: Int, onClick: () -> Unit) {
     val isCurrent = AppState.currentSong.value?.id == song.id
+    val hasTtml = song.hasTtml
     
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -237,14 +238,32 @@ fun SongRow(song: Song, index: Int, onClick: () -> Unit) {
         Column(
             modifier = Modifier.weight(1f)
         ) {
-            Text(
-                text = song.name,
-                color = if (isCurrent) AppleMusicPink else Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = song.name,
+                    color = if (isCurrent) AppleMusicPink else Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (hasTtml) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        color = AppleMusicPink.copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(4.dp),
+                    ) {
+                        Text(
+                            text = "TTML",
+                            color = AppleMusicPink,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
             Text(
                 text = song.artists.joinToString(" & ") { it.name } + " - " + (song.album?.name ?: ""),
                 color = Color.Gray,

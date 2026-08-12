@@ -1,48 +1,31 @@
 # MeT Music Mobile
 
-Kotlin Multiplatform music player targeting Android, Web, and Desktop (JVM).
+基于 Kotlin Multiplatform 和 Compose Multiplatform 的音乐播放器，当前支持 Android、Web 和桌面端（JVM）。
 
-The shared player UI uses the [AppleMusic-like Lyrics for Kotlin Multiplatform](https://github.com/MeTerminator/applemusic-like-lyrics_kotlin)
-library for AMLL/TTML parsing and Apple Music-style synchronized lyrics.
+共享播放器界面使用 [AppleMusic-like Lyrics for Kotlin Multiplatform](https://github.com/MeTerminator/applemusic-like-lyrics_kotlin)
+处理 AMLL/TTML 歌词解析和 Apple Music 风格的同步歌词显示。
 
-## Repository layout
+## 项目结构
 
-- [`androidApp`](./androidApp) — Android application entry point.
-- [`shared`](./shared) — shared Compose Multiplatform UI, playback state, networking, and lyric integration.
-- [`desktopApp`](./desktopApp) — Desktop (JVM) application.
-- [`webApp`](./webApp) — Web application.
-- [`../applemusic-like-lyrics_kotlin`](../applemusic-like-lyrics_kotlin) — sibling source checkout of the lyrics component.
+- [`androidApp`](./androidApp)：Android 应用入口。
+- [`shared`](./shared)：共享的 Compose UI、播放状态、网络请求和歌词集成代码。
+- [`desktopApp`](./desktopApp)：桌面端（JVM）应用。
+- [`webApp`](./webApp)：Web 应用。
+- [`../applemusic-like-lyrics_kotlin`](../applemusic-like-lyrics_kotlin)：歌词组件的本地源码仓库。
 
-## Lyrics dependency
+## TTML 歌词依赖
 
-`shared` declares the stable coordinate `top.met6:applemusic-like-lyrics:0.1.0`.
-For local development, [`settings.gradle.kts`](./settings.gradle.kts) uses a Gradle composite build to substitute that coordinate with
-the sibling `../applemusic-like-lyrics_kotlin` repository and its `:lyrics` module. This keeps the app and component linked while developing them together.
+`shared` 使用依赖坐标：
 
-If the sibling repository is not checked out, remove or disable the `includeBuild` block and provide the same coordinate from a configured Maven repository.
-See the component project's [integration documentation](https://github.com/MeTerminator/applemusic-like-lyrics_kotlin#从源码使用) for its API and standalone build commands.
+```kotlin
+implementation("top.met6:applemusic-like-lyrics:0.1.0")
+```
 
-* [/shared](./shared/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-    - [commonMain](./shared/src/commonMain/kotlin) is for code that’s common for all targets.
-    - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-      For example, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./shared/src/jvmMain/kotlin)
-      folder is the appropriate location.
+本地开发时，[`settings.gradle.kts`](./settings.gradle.kts) 通过 Gradle Composite Build，
+将上述坐标替换为同级目录下 `../applemusic-like-lyrics_kotlin` 仓库的 `:lyrics` 模块，
+因此可以同时修改播放器和歌词组件源码。
 
-### Running the apps
-
-Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and
-options:
-
-- Android app: `./gradlew :androidApp:assembleDebug`
-- Desktop app:
-    - Hot reload: `./gradlew :desktopApp:hotRun --auto`
-    - Standard run: `./gradlew :desktopApp:run`
-- Web app:
-    - Wasm target (faster, modern browsers): `./gradlew :webApp:wasmJsBrowserDevelopmentRun`
-    - JS target (slower, supports older browsers): `./gradlew :webApp:jsBrowserDevelopmentRun`
-
-Before building locally, make sure both repositories are siblings:
+两个仓库需要放在同一目录下：
 
 ```text
 AAA-Projects/
@@ -50,19 +33,54 @@ AAA-Projects/
 └── applemusic-like-lyrics_kotlin/
 ```
 
-Useful verification commands:
+如果不需要本地源码联调，可以移除或关闭 `includeBuild`，改为从已配置的 Maven 仓库获取相同坐标。
+歌词组件的 API 和独立构建方式请参考其[集成文档](https://github.com/MeTerminator/applemusic-like-lyrics_kotlin#从源码使用)。
 
-- Android app: `./gradlew :androidApp:assembleDebug`
-- Shared module: `./gradlew :shared:compileKotlinAndroid`
-- Lyrics dependency: `../applemusic-like-lyrics_kotlin/gradlew :lyrics:jvmTest :lyrics:compileAndroidMain`
+## 共享代码目录
 
----
+- [`commonMain`](./shared/src/commonMain/kotlin)：所有目标平台共用的代码。
+- [`androidMain`](./shared/src/androidMain/kotlin)：Android 专用代码。
+- [`jvmMain`](./shared/src/jvmMain/kotlin)：桌面端（JVM）专用代码。
+- [`jsMain`](./shared/src/jsMain/kotlin)：JavaScript 专用代码。
+- [`wasmJsMain`](./shared/src/wasmJsMain/kotlin)：WebAssembly 专用代码。
 
-Learn more
-about [Kotlin Multiplatform](https://www.jetbrains.com.cn/en-us/help/kotlin-multiplatform-dev/get-started.html),
-[Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform/#compose-multiplatform),
-[Kotlin/Wasm](https://kotl.in/wasm/)…
+## 运行应用
 
-We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack
-channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
-If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
+也可以直接使用 IDE 中的运行配置。
+
+```bash
+# Android
+./gradlew :androidApp:assembleDebug
+
+# 桌面端：热重载
+./gradlew :desktopApp:hotRun --auto
+
+# 桌面端：普通运行
+./gradlew :desktopApp:run
+
+# WebAssembly
+./gradlew :webApp:wasmJsBrowserDevelopmentRun
+
+# JavaScript
+./gradlew :webApp:jsBrowserDevelopmentRun
+```
+
+## 验证命令
+
+```bash
+# 构建 Android Debug 包
+./gradlew :androidApp:assembleDebug
+
+# 编译共享 Android 源集
+./gradlew :shared:compileAndroidMain
+
+# 验证歌词组件
+../applemusic-like-lyrics_kotlin/gradlew :lyrics:jvmTest :lyrics:compileAndroidMain
+```
+
+## 相关项目
+
+- [applemusic-like-lyrics_kotlin](https://github.com/MeTerminator/applemusic-like-lyrics_kotlin)：Kotlin Multiplatform 歌词组件。
+- [applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics)：AMLL 上游参考项目。
+- [Kotlin Multiplatform](https://www.jetbrains.com.cn/en-us/help/kotlin-multiplatform-dev/get-started.html)
+- [Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform/)

@@ -312,7 +312,7 @@ fun SettingsScreen() {
                         onValueChange = {
                             AppState.setLyricFontSize(it.roundToInt())
                         },
-                        valueRange = 14f..28f,
+                        valueRange = 14f..42f,
                         colors = SliderDefaults.colors(
                             thumbColor = AppleMusicPink,
                             activeTrackColor = AppleMusicPink,
@@ -326,8 +326,8 @@ fun SettingsScreen() {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "小 (14sp)", color = Color.Gray, fontSize = 11.sp)
-                        Text(text = "默认 (20sp)", color = Color.Gray, fontSize = 11.sp)
-                        Text(text = "大 (28sp)", color = Color.Gray, fontSize = 11.sp)
+                        Text(text = "默认 (28sp)", color = Color.Gray, fontSize = 11.sp)
+                        Text(text = "大 (42sp)", color = Color.Gray, fontSize = 11.sp)
                     }
                     
                     HorizontalDivider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 16.dp))

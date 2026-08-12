@@ -1,14 +1,16 @@
 package top.met6.music.mobile.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -33,74 +35,68 @@ fun AppNavigation() {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(DarkBackground)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(DarkBackground)) {
         Column(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                when (currentScreen) {
-                    is Screen.Login -> LoginScreen()
-                    is Screen.Playlists -> PlaylistsScreen()
-                    is Screen.PlaylistDetail -> PlaylistDetailScreen(playlist = currentScreen.playlist)
-                    is Screen.Settings -> SettingsScreen()
-                    is Screen.CacheManagerDetail -> CacheManagerScreen()
-                    is Screen.DesktopLyricSettings -> DesktopLyricSettingsScreen()
-                    is Screen.ListenTogether -> ListenTogetherScreen()
-                }
-            }
-
-            if (isLoggedIn && currentScreen != Screen.Login) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    MiniPlayerBar()
-
-                    NavigationBar(
-                        containerColor = CardBackground,
-                        contentColor = Color.White
-                    ) {
-                        NavigationBarItem(
-                            selected = currentScreen is Screen.Playlists || currentScreen is Screen.PlaylistDetail,
-                            onClick = { AppState.navigateTo(Screen.Playlists) },
-                            icon = { Icon(imageVector = Icons.Default.List, contentDescription = "Library") },
-                            label = { Text("资料库", fontSize = 11.sp) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = AppleMusicPink,
-                                selectedTextColor = AppleMusicPink,
-                                unselectedIconColor = Color.Gray,
-                                unselectedTextColor = Color.Gray,
-                                indicatorColor = Color.Transparent
-                            )
-                        )
-                        NavigationBarItem(
-                            selected = currentScreen is Screen.ListenTogether,
-                            onClick = { AppState.navigateTo(Screen.ListenTogether) },
-                            icon = { Icon(imageVector = Icons.Default.Share, contentDescription = "Listen Together") },
-                            label = { Text("一起听", fontSize = 11.sp) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = AppleMusicPink,
-                                selectedTextColor = AppleMusicPink,
-                                unselectedIconColor = Color.Gray,
-                                unselectedTextColor = Color.Gray,
-                                indicatorColor = Color.Transparent
-                            )
-                        )
-                        NavigationBarItem(
-                            selected = currentScreen is Screen.Settings || currentScreen is Screen.CacheManagerDetail || currentScreen is Screen.DesktopLyricSettings,
-                            onClick = { AppState.navigateTo(Screen.Settings) },
-                            icon = { Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings") },
-                            label = { Text("设置", fontSize = 11.sp) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = AppleMusicPink,
-                                selectedTextColor = AppleMusicPink,
-                                unselectedIconColor = Color.Gray,
-                                unselectedTextColor = Color.Gray,
-                                indicatorColor = Color.Transparent
-                            )
-                        )
+                AnimatedContent(
+                    targetState = currentScreen,
+                    transitionSpec = {
+                        val enteringPlaylistDetail = targetState is Screen.PlaylistDetail && initialState is Screen.Playlists
+                        val leavingPlaylistDetail = initialState is Screen.PlaylistDetail && targetState is Screen.Playlists
+                        when {
+                            enteringPlaylistDetail ->
+                                (fadeIn() + slideInHorizontally { it }) togetherWith
+                                    (fadeOut() + slideOutHorizontally { -it })
+                            leavingPlaylistDetail ->
+                                (fadeIn() + slideInHorizontally { -it }) togetherWith
+                                    (fadeOut() + slideOutHorizontally { it })
+                            else ->
+                                (fadeIn() + slideInHorizontally { it / 8 }) togetherWith
+                                    (fadeOut() + slideOutHorizontally { -it / 8 })
+                        }
+                    },
+                    label = "page transition",
+                ) { screen ->
+                    when (screen) {
+                        is Screen.Login -> LoginScreen()
+                        is Screen.Playlists -> PlaylistsScreen()
+                        is Screen.PlaylistDetail -> PlaylistDetailScreen(playlist = screen.playlist)
+                        is Screen.Settings -> SettingsScreen()
+                        is Screen.CacheManagerDetail -> CacheManagerScreen()
+                        is Screen.DesktopLyricSettings -> DesktopLyricSettingsScreen()
+                        is Screen.ListenTogether -> ListenTogetherScreen()
                     }
                 }
             }
+
         }
 
-        // Global Toast
-        if (AppState.globalToastMessage.value.isNotEmpty()) {
+        // Float above the page content without taking layout space.
+        if (isLoggedIn && currentScreen != Screen.Login) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = maxHeight * 0.05f),
+                contentAlignment = androidx.compose.ui.Alignment.BottomCenter,
+            ) {
+                MiniPlayerBar()
+            }
+        }
+
+        AnimatedVisibility(
+            visible = AppState.isFullScreenPlayer.value,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it })
+        ) {
+            FullScreenPlayer()
+        }
+
+        // Keep the global toast above the full-screen player and lyric surface.
+        AnimatedVisibility(
+            visible = AppState.globalToastMessage.value.isNotEmpty(),
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(bottom = 120.dp),
                 contentAlignment = androidx.compose.ui.Alignment.BottomCenter
@@ -117,14 +113,6 @@ fun AppNavigation() {
                     )
                 }
             }
-        }
-
-        AnimatedVisibility(
-            visible = AppState.isFullScreenPlayer.value,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it })
-        ) {
-            FullScreenPlayer()
         }
     }
 }

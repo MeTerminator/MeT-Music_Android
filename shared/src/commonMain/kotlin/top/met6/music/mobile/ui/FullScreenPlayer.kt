@@ -49,6 +49,7 @@ fun FullScreenPlayer() {
     var showQueueSheet by remember { mutableStateOf(false) }
     var showTranslation by remember { mutableStateOf(true) }
 
+
     // Prevent screen from dimming/sleeping during playback
     KeepScreenOn()
 
@@ -339,28 +340,21 @@ fun FullScreenPlayer() {
 
 @Composable
 fun PlayerHeader(isLandscape: Boolean) {
-    Row(
+    Box(
         modifier = Modifier
             .statusBarsPadding()
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(top = 8.dp, bottom = 12.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        IconButton(onClick = { AppState.isFullScreenPlayer.value = false }) {
-            Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-        }
-        
-        if (!isLandscape) {
-            Text(
-                text = "正在播放",
-                color = Color.LightGray,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-        
-        Box(modifier = Modifier.size(48.dp)) // placeholder to balance close button
+        Box(
+            modifier = Modifier
+                .width(42.dp)
+                .height(5.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.7f))
+                .clickable { AppState.isFullScreenPlayer.value = false }
+        )
     }
 }
 
@@ -372,7 +366,11 @@ fun PortraitPager(
     onShowTranslationChange: (Boolean) -> Unit,
     onShowQueue: () -> Unit
 ) {
-    val pagerState = rememberPagerState(pageCount = { 2 })
+    val pagerState = rememberPagerState(initialPage = AppState.fullScreenPlayerPage.value, pageCount = { 2 })
+
+    LaunchedEffect(pagerState.currentPage) {
+        AppState.fullScreenPlayerPage.value = pagerState.currentPage
+    }
 
     HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
         if (page == 0) {
@@ -429,7 +427,23 @@ fun PortraitPager(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 16.dp),
+                        .padding(bottom = 16.dp)
+                        .pointerInput(Unit) {
+                            var totalDragY = 0f
+                            detectVerticalDragGestures(
+                                onDragStart = { totalDragY = 0f },
+                                onVerticalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    totalDragY += dragAmount
+                                },
+                                onDragEnd = {
+                                    if (totalDragY > 120f) {
+                                        AppState.isFullScreenPlayer.value = false
+                                    }
+                                },
+                                onDragCancel = { totalDragY = 0f },
+                            )
+                        },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CachedImage(
@@ -473,29 +487,12 @@ fun PortraitPager(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Translation toggle button
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(if (showTranslation) Color.White.copy(alpha = 0.2f) else Color.Transparent)
-                            .border(
-                                width = 1.dp,
-                                color = if (showTranslation) Color.Transparent else Color.White.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(20.dp)
-                            )
-                            .clickable { onShowTranslationChange(!showTranslation) }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "翻译",
-                            color = if (showTranslation) Color.White else Color.White.copy(alpha = 0.5f),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                    // Queue button on the left
+                    IconButton(onClick = onShowQueue) {
+                        Icon(imageVector = Icons.Default.List, contentDescription = "播放列表", tint = Color.White)
                     }
 
-                    // Play / Pause / Skip controls
+                    // Previous / Play / Pause / Next controls in the center
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -539,6 +536,28 @@ fun PortraitPager(
                                 modifier = Modifier.size(24.dp)
                             )
                         }
+                    }
+
+                    // Translation button on the right
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (showTranslation) Color.White.copy(alpha = 0.2f) else Color.Transparent)
+                            .border(
+                                width = 1.dp,
+                                color = if (showTranslation) Color.Transparent else Color.White.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(20.dp)
+                            )
+                            .clickable { onShowTranslationChange(!showTranslation) }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "翻译",
+                            color = if (showTranslation) Color.White else Color.White.copy(alpha = 0.5f),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
             }

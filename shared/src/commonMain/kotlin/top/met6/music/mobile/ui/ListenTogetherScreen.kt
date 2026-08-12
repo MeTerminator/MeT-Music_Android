@@ -34,10 +34,30 @@ import top.met6.music.mobile.state.toSong
 fun ListenTogetherScreen() {
     val isInRoom = ListenTogetherState.isInRoom.value
 
-    if (!isInRoom) {
-        JoinOrCreateLayout()
-    } else {
-        RoomLayout()
+    Column(modifier = Modifier.fillMaxSize().background(DarkBackground)) {
+        TopAppBar(
+            title = { Text("一起听歌", color = Color.White) },
+            navigationIcon = {
+                IconButton(onClick = { AppState.navigateTo(Screen.Playlists) }) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "返回资料库",
+                        tint = Color.White,
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = DarkBackground,
+                titleContentColor = Color.White,
+            ),
+        )
+        Box(modifier = Modifier.weight(1f)) {
+            if (!isInRoom) {
+                JoinOrCreateLayout()
+            } else {
+                RoomLayout()
+            }
+        }
     }
 }
 
@@ -69,12 +89,6 @@ fun JoinOrCreateLayout() {
         ) {
             Spacer(modifier = Modifier.height(24.dp))
             
-            Text(
-                text = "一起听歌",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = AppleMusicPink
-            )
             Text(
                 text = "与好友实时共享播放队列，同步切歌与进度",
                 fontSize = 13.sp,

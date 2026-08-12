@@ -54,8 +54,10 @@ data class Song(
     @SerialName("al") val album: Album? = null,
     val cover: String? = null,
     val coverSize: CoverSizes? = null,
-    @SerialName("dt") val durationMs: Long = 0
+    @SerialName("dt") val durationMs: Long = 0,
+    val ttml: Int = 0
 ) {
+    val hasTtml: Boolean get() = ttml == 1
     val lyricMid: String
         get() = mid?.takeIf(String::isNotBlank) ?: id
 

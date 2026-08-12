@@ -15,6 +15,7 @@ import top.met6.music.mobile.player.MediaSessionController
 import top.met6.music.mobile.player.createAudioPlayer
 import top.met6.amll.LyricLine
 import top.met6.amll.TtmlParser
+import top.met6.music.mobile.models.TtmlLyricResponse
 import top.met6.music.mobile.lyric.LyricParser
 import top.met6.music.mobile.storage.CacheManager
 import top.met6.music.mobile.storage.PlatformContext
@@ -86,7 +87,7 @@ object AppState {
         globalToastMessage.value = msg
         toastJob?.cancel()
         toastJob = scope.launch {
-            kotlinx.coroutines.delay(2000)
+            kotlinx.coroutines.delay(3000)
             globalToastMessage.value = ""
         }
     }
@@ -108,8 +109,11 @@ object AppState {
     
     // --- Audio Details & Lyrics ---
     val lyricLines = mutableStateOf<List<LyricLine>>(emptyList())
+    val ttmlSongIds = mutableStateOf<Set<String>>(emptySet())
+    val ttmlAuthor = mutableStateOf<String?>(null)
     val currentLyricIndex = mutableStateOf(-1)
     val isFullScreenPlayer = mutableStateOf(false)
+    val fullScreenPlayerPage = mutableStateOf(0)
     val soundQuality = mutableStateOf("hq") // web, hq, sq, rs, dts, q360v1, q360v2, qai
     val syncThresholdSec = mutableStateOf(0.3f)
 
@@ -121,7 +125,7 @@ object AppState {
     val currentThemeColor = mutableStateOf(Color(0xFF1E1E24))
     val lyricOffsetMs = mutableStateOf(0L)
     val lyricLeadMs = mutableStateOf(300L)
-    val lyricFontSize = mutableStateOf(20)
+    val lyricFontSize = mutableStateOf(28)
     val translationFontSize = mutableStateOf(14)
     val useSpotifyFont = mutableStateOf(false)
 
@@ -317,9 +321,9 @@ object AppState {
 
         val savedLyricSize = platformStorage.getText("lyric_font_size")
         if (!savedLyricSize.isNullOrEmpty()) {
-            lyricFontSize.value = savedLyricSize.toIntOrNull() ?: 20
+            lyricFontSize.value = savedLyricSize.toIntOrNull() ?: 28
         } else {
-            lyricFontSize.value = 20
+            lyricFontSize.value = 28
         }
 
         val savedTranslationSize = platformStorage.getText("translation_font_size")
@@ -737,8 +741,20 @@ object AppState {
                 player.play(audioUrl, startPositionMs = startupPos)
                 if (startupPos > 0L) savedPlaybackPositionMs.value = 0L
 
-                // Lyrics are independent of audio preparation and can arrive later.
-                lyricLines.value = loadLyrics(song)
+                // Show ordinary lyrics first. TTML is a second-stage upgrade; when it
+                // finishes, replace the state so an already-open lyric page refreshes.
+                val ordinaryLines = loadOrdinaryLyrics(song)
+                if (currentSong.value?.id == song.id) {
+                    lyricLines.value = ordinaryLines
+                }
+                val ttmlResponse = try { ApiClient.getTtmlLyric(song.lyricMid) } catch (error: Exception) {
+                    error.printStackTrace()
+                    null
+                }
+                if (currentSong.value?.id == song.id) {
+                    lyricLines.value = applyTtmlLyrics(song, ordinaryLines, ttmlResponse)
+                    updateLyricIndex(player.currentPositionMs.value)
+                }
                 updateCacheSizes()
 
                 // Save song metadata for cache management
@@ -823,8 +839,6 @@ object AppState {
                         lyricResponse = ApiClient.getSongLyric(song.id)
                         storage.saveLyricToCache(song.id, lyricResponse)
                     }
-                    // Keep the same request order as playback: ordinary lyric first, TTML second.
-                    ApiClient.getTtmlLyric(song.lyricMid)
                 } catch (e: Exception) {
                     // Ignore lyric preloading errors
                 }
@@ -835,24 +849,49 @@ object AppState {
     }
  
     suspend fun loadLyrics(song: Song): List<LyricLine> {
-        var ordinaryResponse = storage.getLyricFromCache(song.id)
-        if (ordinaryResponse == null) {
-            ordinaryResponse = ApiClient.getSongLyric(song.id)
-            storage.saveLyricToCache(song.id, ordinaryResponse)
-        }
-        val ordinaryLines = LyricParser.parse(ordinaryResponse)
-
-        return try {
-            val ttmlResponse = ApiClient.getTtmlLyric(song.lyricMid)
-            if (ttmlResponse.status == "success" && !ttmlResponse.content.isNullOrBlank()) {
-                TtmlParser.parseAmll(ttmlResponse.content).lines.ifEmpty { ordinaryLines }
-            } else {
-                ordinaryLines
-            }
-        } catch (error: Exception) {
+        val ordinaryLines = loadOrdinaryLyrics(song)
+        val ttmlResponse = try { ApiClient.getTtmlLyric(song.lyricMid) } catch (error: Exception) {
             error.printStackTrace()
-            ordinaryLines
+            null
         }
+        return applyTtmlLyrics(song, ordinaryLines, ttmlResponse)
+    }
+
+    private suspend fun loadOrdinaryLyrics(song: Song): List<LyricLine> {
+        var response = storage.getLyricFromCache(song.id)
+        if (response == null) {
+            response = ApiClient.getSongLyric(song.id)
+            storage.saveLyricToCache(song.id, response)
+        }
+        return LyricParser.parse(response)
+    }
+
+    private fun hasTtml(response: TtmlLyricResponse?): Boolean =
+        response?.status == "success" && !response.content.isNullOrBlank()
+
+    private fun applyTtmlLyrics(
+        song: Song,
+        ordinaryLines: List<LyricLine>,
+        response: TtmlLyricResponse?,
+    ): List<LyricLine> {
+        if (!hasTtml(response)) {
+            ttmlAuthor.value = null
+            return ordinaryLines
+        }
+        val parsed = TtmlParser.parseAmll(response!!.content!!)
+        if (parsed.lines.isEmpty()) return ordinaryLines
+
+        ttmlSongIds.value = ttmlSongIds.value + song.id
+        val author = parsed.metadata
+            .firstOrNull { it.first == "ttmlAuthorGithubLogin" }
+            ?.second
+            ?.filter(String::isNotBlank)
+            ?.distinct()
+            ?.joinToString("、")
+            ?.takeIf(String::isNotBlank)
+        ttmlAuthor.value = author
+        if (author != null) showToast("TTML 作者：$author")
+        return parsed.lines
     }
 
     private fun updateLyricIndex(currentTimeMs: Long) {
