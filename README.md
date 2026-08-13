@@ -1,4 +1,4 @@
-# MeT Music Mobile
+# MeT-Music_Android
 
 基于 Kotlin Multiplatform 和 Compose Multiplatform 的音乐播放器，当前支持 Android、Web 和桌面端（JVM）。
 

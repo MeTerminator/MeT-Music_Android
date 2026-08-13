@@ -6,9 +6,14 @@ import top.met6.music.mobile.models.LyricResponse
 
 /** Converts the service's ordinary LRC/QRC response to the shared AMLL model. */
 object LyricParser {
-    fun parse(response: LyricResponse): List<LyricLine> {
+    fun parse(
+        response: LyricResponse,
+        removeQrcSongInfo: Boolean = true,
+    ): List<LyricLine> {
         response.qrc?.takeIf(String::isNotBlank)?.let { qrc ->
-            val parsed = parseQrc(qrc)
+            val parsed = parseQrc(qrc).let { lines ->
+                if (removeQrcSongInfo) removeQrcInformationLines(lines) else lines
+            }
             if (parsed.isNotEmpty()) {
                 val translated = alignSubLine(parsed, response.qrctrans ?: response.lrctrans, roman = false)
                 return alignSubLine(translated, response.qrcroma, roman = true)
@@ -62,6 +67,15 @@ object LyricParser {
             }.toList().ifEmpty { listOf(LyricWord(lineStart, lineEnd, decodeEntities(content))) }
             LyricLine(words = words, startTime = lineStart, endTime = lineEnd)
         }
+    }
+
+    private fun removeQrcInformationLines(lines: List<LyricLine>): List<LyricLine> =
+        lines.drop(1).dropWhile(::isQrcInformationLine)
+
+    private fun isQrcInformationLine(line: LyricLine): Boolean {
+        if (':' !in line.text && '：' !in line.text) return false
+        val firstDuration = line.words.firstOrNull()?.let { it.endTime - it.startTime } ?: return false
+        return line.words.all { it.endTime - it.startTime == firstDuration }
     }
 
     private fun alignSubLine(base: List<LyricLine>, source: String?, roman: Boolean): List<LyricLine> {

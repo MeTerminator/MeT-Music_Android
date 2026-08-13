@@ -1,4 +1,4 @@
-rootProject.name = "MeT-Music_Mobile"
+rootProject.name = "MeT-Music_Android"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {

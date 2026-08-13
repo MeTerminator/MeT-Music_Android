@@ -128,6 +128,7 @@ object AppState {
     val lyricFontSize = mutableStateOf(28)
     val translationFontSize = mutableStateOf(14)
     val useSpotifyFont = mutableStateOf(false)
+    val removeQrcSongInfo = mutableStateOf(true)
 
     // --- Desktop Lyric Settings ---
     val desktopLyricEnabled = mutableStateOf(false)
@@ -340,6 +341,11 @@ object AppState {
             useSpotifyFont.value = false
         }
 
+        removeQrcSongInfo.value = platformStorage
+            .getText("remove_qrc_song_info")
+            ?.toBoolean()
+            ?: true
+
         // Read saved desktop lyric configs
         val savedDesktopLyric = platformStorage.getText("desktop_lyric_enabled")?.toBoolean() ?: false
         desktopLyricEnabled.value = savedDesktopLyric
@@ -549,6 +555,25 @@ object AppState {
     fun setUseSpotifyFont(enabled: Boolean) {
         useSpotifyFont.value = enabled
         platformStorage.saveText("use_spotify_font", enabled.toString())
+    }
+
+    fun setRemoveQrcSongInfo(enabled: Boolean) {
+        removeQrcSongInfo.value = enabled
+        platformStorage.saveText("remove_qrc_song_info", enabled.toString())
+
+        val song = currentSong.value ?: return
+        scope.launch {
+            val lines = try {
+                loadLyrics(song)
+            } catch (error: Exception) {
+                error.printStackTrace()
+                return@launch
+            }
+            if (currentSong.value?.id == song.id) {
+                lyricLines.value = lines
+                updateLyricIndex(player.currentPositionMs.value)
+            }
+        }
     }
 
     fun updateCacheSizes() {
@@ -863,7 +888,10 @@ object AppState {
             response = ApiClient.getSongLyric(song.id)
             storage.saveLyricToCache(song.id, response)
         }
-        return LyricParser.parse(response)
+        return LyricParser.parse(
+            response = response,
+            removeQrcSongInfo = removeQrcSongInfo.value,
+        )
     }
 
     private fun hasTtml(response: TtmlLyricResponse?): Boolean =

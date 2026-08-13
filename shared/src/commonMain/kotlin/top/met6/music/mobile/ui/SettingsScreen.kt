@@ -386,6 +386,36 @@ fun SettingsScreen() {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "去除 QRC 歌曲信息",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "隐藏逐字歌词开头的歌曲名、歌手等信息行",
+                                color = Color.Gray,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Switch(
+                            checked = AppState.removeQrcSongInfo.value,
+                            onCheckedChange = { AppState.setRemoveQrcSongInfo(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = AppleMusicPink
+                            )
+                        )
+                    }
+
+                    HorizontalDivider(color = Color.DarkGray, modifier = Modifier.padding(vertical = 16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Column {
                             Text(
                                 text = "歌词使用 Spotify 字体",

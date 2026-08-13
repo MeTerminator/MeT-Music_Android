@@ -6,8 +6,8 @@ import androidx.compose.ui.text.font.FontFamily
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.preloadFont
 
-import met_music_mobile.webapp.generated.resources.NotoSansSC
-import met_music_mobile.webapp.generated.resources.Res
+import met_music_android.webapp.generated.resources.NotoSansSC
+import met_music_android.webapp.generated.resources.Res
 
 @OptIn(ExperimentalResourceApi::class)
 @Composable

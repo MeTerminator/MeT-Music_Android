@@ -38,8 +38,8 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.text.font.FontFamily
 import top.met6.amll.AppleMusicLyricPlayer
 import top.met6.amll.AppleMusicLyricPlayerStyle
-import met_music_mobile.shared.generated.resources.Res
-import met_music_mobile.shared.generated.resources.spotify_mix
+import met_music_android.shared.generated.resources.Res
+import met_music_android.shared.generated.resources.spotify_mix
 import org.jetbrains.compose.resources.Font
 
 @OptIn(ExperimentalMaterial3Api::class)

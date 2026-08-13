@@ -6,7 +6,7 @@ import androidx.compose.ui.window.application
 fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
-        title = "MeT-Music_Mobile",
+        title = "MeT-Music_Android",
     ) {
         App(Unit)
     }
