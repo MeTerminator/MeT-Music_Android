@@ -4,25 +4,40 @@ import top.met6.amll.LyricLine
 import top.met6.amll.LyricWord
 import top.met6.music.mobile.models.LyricResponse
 
-/** Converts the service's ordinary LRC/QRC response to the shared AMLL model. */
+enum class LyricFormat { LRC, QRC, YRC, TTML;
+    fun transitionLeadMs(configuredMs: Long): Long = if (this == QRC || this == YRC) configuredMs else 0L
+}
+
+data class ParsedLyric(val lines: List<LyricLine>, val format: LyricFormat)
+
+/** Converts the service's ordinary LRC/QRC/YRC response to the shared AMLL model. */
 object LyricParser {
     fun parse(
         response: LyricResponse,
         removeQrcSongInfo: Boolean = true,
-    ): List<LyricLine> {
+    ): List<LyricLine> = parseWithFormat(response, removeQrcSongInfo).lines
+
+    fun parseWithFormat(response: LyricResponse, removeQrcSongInfo: Boolean = true): ParsedLyric {
+        response.yrc?.takeIf(String::isNotBlank)?.let { yrc ->
+            val parsed = parseYrc(yrc)
+            val lines = if (removeQrcSongInfo) parsed.filterNot(::isYrcInformationLine) else parsed
+            if (parsed.isNotEmpty()) return ParsedLyric(alignSubLine(
+                alignSubLine(lines, response.ytlrc ?: response.lrctrans, roman = false),
+                response.yromalrc ?: response.romalrc, roman = true), LyricFormat.YRC)
+        }
         response.qrc?.takeIf(String::isNotBlank)?.let { qrc ->
             val parsed = parseQrc(qrc).let { lines ->
                 if (removeQrcSongInfo) removeQrcInformationLines(lines) else lines
             }
             if (parsed.isNotEmpty()) {
                 val translated = alignSubLine(parsed, response.qrctrans ?: response.lrctrans, roman = false)
-                return alignSubLine(translated, response.qrcroma, roman = true)
+                return ParsedLyric(alignSubLine(translated, response.qrcroma, roman = true), LyricFormat.QRC)
             }
         }
         response.lrc?.takeIf(String::isNotBlank)?.let { lrc ->
-            return alignSubLine(parseLrc(lrc), response.lrctrans, roman = false)
+            return ParsedLyric(alignSubLine(alignSubLine(parseLrc(lrc), response.lrctrans, roman = false), response.romalrc, roman = true), LyricFormat.LRC)
         }
-        return emptyList()
+        return ParsedLyric(emptyList(), LyricFormat.LRC)
     }
 
     private fun parseLrc(source: String): List<LyricLine> {
@@ -49,6 +64,21 @@ object LyricParser {
         return result
     }
 
+    private fun parseYrc(source: String): List<LyricLine> {
+        val linePattern = Regex("""^\[(\d+),(\d+)\]""")
+        val wordPattern = Regex("""\((\d+),(\d+),\d+\)([^()]*)""")
+        return source.lines().mapNotNull { raw ->
+            val line = linePattern.find(raw) ?: return@mapNotNull null
+            val start = line.groupValues[1].toLong()
+            val end = start + line.groupValues[2].toLong()
+            val words = wordPattern.findAll(raw.substring(line.value.length)).map { match ->
+                val wordStart = match.groupValues[1].toLong()
+                LyricWord(wordStart, wordStart + match.groupValues[2].toLong(), decodeEntities(match.groupValues[3]))
+            }.filter { it.word.isNotEmpty() }.toList()
+            if (words.isEmpty()) null else LyricLine(words = words, startTime = start, endTime = end)
+        }
+    }
+
     private fun parseQrc(source: String): List<LyricLine> {
         val lineTime = Regex("""^\[(\d+),(\d+)\]""")
         val wordTime = Regex("""([^{}()]*)[({](\d+),(\d+)[})]""")
@@ -67,6 +97,14 @@ object LyricParser {
             }.toList().ifEmpty { listOf(LyricWord(lineStart, lineEnd, decodeEntities(content))) }
             LyricLine(words = words, startTime = lineStart, endTime = lineEnd)
         }
+    }
+
+    private val yrcCredit = Regex("""^(?:作词|作曲|词曲|填词|编曲|制作人?|出品|混音|母带|和声|录音|演唱|原唱|发行|版权|OP|SP|Lyrics|Composer|Producer|by)\s*[:：]""", RegexOption.IGNORE_CASE)
+    private fun isYrcInformationLine(line: LyricLine): Boolean {
+        val text = line.text.trim()
+        return yrcCredit.containsMatchIn(text) ||
+            (line.startTime == 0L && " - " in text) ||
+            Regex("""未[经經].*[许許]可.*(?:不得|禁止)""").containsMatchIn(text)
     }
 
     private fun removeQrcInformationLines(lines: List<LyricLine>): List<LyricLine> =

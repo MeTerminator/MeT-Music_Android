@@ -37,6 +37,9 @@ import top.met6.music.mobile.state.AppState
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.text.font.FontFamily
 import top.met6.amll.AppleMusicLyricPlayer
+import top.met6.amll.OptimizeLyricOptions
+import top.met6.music.mobile.lyric.LyricFormat
+import top.met6.music.mobile.lyric.applyTransitionLead
 import top.met6.amll.AppleMusicLyricPlayerStyle
 import met_music_android.shared.generated.resources.Res
 import met_music_android.shared.generated.resources.spotify_mix
@@ -62,7 +65,7 @@ fun FullScreenPlayer() {
         val coverUrl = song.bestCoverUrl
         if (coverUrl.isNotEmpty()) {
             CachedImage(
-                songId = song.id,
+                songId = song.cacheKey,
                 imageUrl = coverUrl,
                 modifier = Modifier
                     .fillMaxSize()
@@ -128,7 +131,7 @@ fun FullScreenPlayer() {
                             
                             val coverUrl = song.bestCoverUrl
                             CachedImage(
-                                songId = song.id,
+                                songId = song.cacheKey,
                                 imageUrl = coverUrl,
                                 modifier = Modifier
                                     .fillMaxWidth(0.8f)
@@ -209,7 +212,7 @@ fun FullScreenPlayer() {
                                     .clickable { showControlsOverCover = !showControlsOverCover }
                             ) {
                                 CachedImage(
-                                    songId = song.id,
+                                    songId = song.cacheKey,
                                     imageUrl = coverUrl,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
@@ -307,9 +310,9 @@ fun FullScreenPlayer() {
                             color = Color.White
                         )
                         IconButton(onClick = {
-                            val currentId = AppState.currentSong.value?.id
+                            val currentId = AppState.currentSong.value?.cacheKey
                             val queue = AppState.currentQueue.value
-                            val index = queue.indexOfFirst { it.id == currentId }
+                            val index = queue.indexOfFirst { it.cacheKey == currentId }
                             if (index >= 0) {
                                 scope.launch {
                                     listState.animateScrollToItem(index)
@@ -399,7 +402,7 @@ fun PortraitPager(
             ) {
                 val coverUrl = song.bestCoverUrl
                 CachedImage(
-                    songId = song.id,
+                    songId = song.cacheKey,
                     imageUrl = coverUrl,
                     modifier = Modifier
                         .fillMaxWidth(0.85f)
@@ -447,7 +450,7 @@ fun PortraitPager(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CachedImage(
-                        songId = song.id,
+                        songId = song.cacheKey,
                         imageUrl = song.bestCoverUrl,
                         modifier = Modifier
                             .size(56.dp)
@@ -756,8 +759,15 @@ fun LyricsView(showTranslation: Boolean = true) {
         }
     }
 
+    val format = AppState.currentLyricFormat()
+    val isWordTimed = format == LyricFormat.QRC || format == LyricFormat.YRC
+    val leadMs = format.transitionLeadMs(AppState.lyricLeadMs.value)
+    val displayLines = remember(lines, leadMs, isWordTimed) {
+        if (isWordTimed) applyTransitionLead(lines, leadMs) else lines
+    }
     AppleMusicLyricPlayer(
-        lyricLines = lines,
+        lyricLines = displayLines,
+        optimizeOptions = OptimizeLyricOptions(resetLineTimestamps = !isWordTimed, tryAdvanceStartTime = !isWordTimed),
         // Preserve the pre-AMLL contract: lyrics consume the exact same media clock
         // shown by the scrubber and used by AppState, with no route-specific clock.
         currentTimeMs = AppState.player.currentPositionMs.value + AppState.lyricOffsetMs.value,

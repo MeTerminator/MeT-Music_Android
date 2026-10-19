@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import top.met6.music.mobile.api.ApiClient
+import top.met6.music.mobile.models.MusicPlatform
 import top.met6.music.mobile.models.Playlist
 import top.met6.music.mobile.models.Song
 import top.met6.music.mobile.player.AudioPlayer
@@ -16,6 +17,7 @@ import top.met6.music.mobile.player.createAudioPlayer
 import top.met6.amll.LyricLine
 import top.met6.amll.TtmlParser
 import top.met6.music.mobile.models.TtmlLyricResponse
+import top.met6.music.mobile.lyric.LyricFormat
 import top.met6.music.mobile.lyric.LyricParser
 import top.met6.music.mobile.storage.CacheManager
 import top.met6.music.mobile.storage.PlatformContext
@@ -25,7 +27,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 sealed class Screen {
-    object Login : Screen()
     object Playlists : Screen()
     data class PlaylistDetail(val playlist: Playlist) : Screen()
     object Settings : Screen()
@@ -61,9 +62,10 @@ object AppState {
     private var standaloneStreamingSongId: String? = null
     private var standaloneStreamingUrl: String? = null
     private var accurateSeekGeneration = 0L
+    private var playbackRequest = 0L
 
     // --- Navigation ---
-    val currentScreen = mutableStateOf<Screen>(Screen.Login)
+    val currentScreen = mutableStateOf<Screen>(Screen.Playlists)
     val navigationStack = mutableListOf<Screen>()
 
     fun navigateTo(screen: Screen) {
@@ -93,6 +95,11 @@ object AppState {
     }
 
     // --- User state ---
+    val selectedPlatform = mutableStateOf(MusicPlatform.QQ)
+    val accountIds = mutableStateOf<Map<MusicPlatform, String>>(emptyMap())
+    val neteaseQuality = mutableStateOf("exhigh")
+    fun qualityFor(song: Song): String = if (song.source == MusicPlatform.NETEASE) neteaseQuality.value else soundQuality.value
+    private var accountRequest = 0
     val isLoggedIn = mutableStateOf(false)
     val qqId = mutableStateOf("")
     val nickname = mutableStateOf("未登录")
@@ -108,6 +115,8 @@ object AppState {
     val playbackMode = mutableStateOf(PlaybackMode.SEQUENCE)
     
     // --- Audio Details & Lyrics ---
+    val lyricFormats = mutableStateOf<Map<String, LyricFormat>>(emptyMap())
+    fun currentLyricFormat(): LyricFormat = lyricFormats.value[currentSong.value?.cacheKey] ?: LyricFormat.LRC
     val lyricLines = mutableStateOf<List<LyricLine>>(emptyList())
     val ttmlSongIds = mutableStateOf<Set<String>>(emptySet())
     val ttmlAuthor = mutableStateOf<String?>(null)
@@ -205,7 +214,7 @@ object AppState {
         val remoteUrl = standaloneStreamingUrl
         val needsLocalAsset = player.accurateSeekRequiresLocalFile &&
             song != null &&
-            standaloneStreamingSongId == song.id &&
+            standaloneStreamingSongId == song.cacheKey &&
             !remoteUrl.isNullOrBlank()
         if (!needsLocalAsset) {
             player.seekTo(positionMs)
@@ -221,12 +230,12 @@ object AppState {
         scope.launch {
             try {
                 val localUrl = storage.getSongAudioUrl(
-                    songId = song.id,
+                    songId = song.audioKey(qualityFor(song)),
                     remoteUrl = remoteUrl,
                     waitForCache = true,
                 )
                 if (generation != accurateSeekGeneration ||
-                    currentSong.value?.id != song.id ||
+                    currentSong.value?.cacheKey != song.cacheKey ||
                     ListenTogetherState.isInRoom.value
                 ) return@launch
 
@@ -239,7 +248,7 @@ object AppState {
                 )
             } catch (error: Exception) {
                 error.printStackTrace()
-                if (generation == accurateSeekGeneration && currentSong.value?.id == song.id) {
+                if (generation == accurateSeekGeneration && currentSong.value?.cacheKey == song.cacheKey) {
                     // Preserve basic seeking if caching genuinely fails.
                     player.seekTo(positionMs)
                     if (shouldResume) player.resume()
@@ -250,6 +259,7 @@ object AppState {
     }
 
     fun clearStandaloneStreamingSource() {
+        playbackRequest++
         accurateSeekGeneration++
         standaloneStreamingSongId = null
         standaloneStreamingUrl = null
@@ -284,6 +294,11 @@ object AppState {
         }
 
         // Read saved configs
+        neteaseQuality.value = platformStorage.getText("netease_sound_quality") ?: "exhigh"
+        accountIds.value = MusicPlatform.entries.mapNotNull { platform ->
+            platformStorage.getText(if (platform == MusicPlatform.QQ) "qq_id" else "netease_id")
+                ?.takeIf { it.isNotBlank() }?.let { platform to it }
+        }.toMap()
         val savedQq = platformStorage.getText("qq_id")
         val savedQuality = platformStorage.getText("sound_quality")
         val savedMode = platformStorage.getText("playback_mode")
@@ -367,6 +382,7 @@ object AppState {
         // Restore last playback state
         loadSavedPlaybackState()
 
+        if (savedQq.isNullOrEmpty() && accountIds.value.containsKey(MusicPlatform.NETEASE)) selectPlatform(MusicPlatform.NETEASE)
         if (!savedQq.isNullOrEmpty()) {
             qqId.value = savedQq
             isLoggedIn.value = true
@@ -402,129 +418,90 @@ object AppState {
         updateCacheSizes()
     }
 
-    fun login(qqNumber: String, onResult: (Boolean, String) -> Unit) {
-        if (qqNumber.trim().isEmpty()) {
-            onResult(false, "请输入QQ号")
+    fun selectPlatform(platform: MusicPlatform) {
+        accountRequest++
+        selectedPlatform.value = platform
+        qqId.value = accountIds.value[platform].orEmpty()
+        isLoggedIn.value = qqId.value.isNotEmpty()
+        nickname.value = platformStorage.getText("${platform.apiValue}_nickname") ?: qqId.value.ifEmpty { "未登录" }
+        avatarUrl.value = platformStorage.getText("${platform.apiValue}_avatar").orEmpty()
+        playlists.value = emptyList()
+        userPlaylistsLoading.value = false
+        if (qqId.value.isNotEmpty()) loadUserPlaylists(qqId.value)
+    }
+
+    fun login(qqNumber: String, onResult: (Boolean, String) -> Unit) =
+        loginAccount(selectedPlatform.value, qqNumber, onResult)
+
+    fun loginAccount(platform: MusicPlatform, input: String, onResult: (Boolean, String) -> Unit) {
+        val uid = input.trim()
+        if (uid.isEmpty() || uid.any { it !in '0'..'9' }) {
+            onResult(false, "请输入有效的数字用户 ID")
             return
         }
-        userPlaylistsLoading.value = true
         scope.launch {
             try {
-                // Fetch from network
-                val response = ApiClient.getUserPlaylists(qqNumber)
-                if (response.playlist.isNotEmpty()) {
-                    // Success!
-                    storage.savePlaylistsToCache(qqNumber, response.playlist)
-                    
-                    platformStorage.saveText("qq_id", qqNumber)
-                    platformStorage.saveText("nickname", response.username ?: qqNumber)
-                    platformStorage.saveText("avatar_url", response.avatarUrl ?: "")
-
-                    qqId.value = qqNumber
-                    nickname.value = response.username ?: qqNumber
-                    avatarUrl.value = response.avatarUrl ?: ""
-                    playlists.value = response.playlist
-                    isLoggedIn.value = true
-                    
-                    userPlaylistsLoading.value = false
-                    onResult(true, "登录成功")
-                    navigateTo(Screen.Playlists)
-                    updateCacheSizes()
-                } else {
-                    userPlaylistsLoading.value = false
-                    onResult(false, "没有找到该用户的歌单")
+                val response = ApiClient.getUserPlaylists(uid, platform)
+                if (response.code != 200 || response.username.isNullOrBlank()) {
+                    onResult(false, "没有找到该用户的公开资料和歌单")
+                    return@launch
                 }
-            } catch (e: Exception) {
-                // Fallback to cache if available
-                val cached = storage.getPlaylistsFromCache(qqNumber)
-                if (cached != null) {
-                    qqId.value = qqNumber
-                    nickname.value = platformStorage.getText("nickname") ?: qqNumber
-                    avatarUrl.value = platformStorage.getText("avatar_url") ?: ""
-                    playlists.value = cached
-                    isLoggedIn.value = true
-
-                    userPlaylistsLoading.value = false
-                    onResult(true, "网络已断开，已载入本地缓存歌单")
-                    navigateTo(Screen.Playlists)
-                } else {
-                    userPlaylistsLoading.value = false
-                    onResult(false, "登录失败，请检查网络或QQ号: ${e.message}")
-                }
+                val lists = response.playlist.map { it.copy(source = platform) }
+                storage.savePlaylistsToCache(platform.key(uid), lists)
+                platformStorage.saveText(if (platform == MusicPlatform.QQ) "qq_id" else "netease_id", uid)
+                platformStorage.saveText("${platform.apiValue}_nickname", response.username ?: uid)
+                platformStorage.saveText("${platform.apiValue}_avatar", response.avatarUrl.orEmpty())
+                accountIds.value = accountIds.value + (platform to uid)
+                selectPlatform(platform)
+                onResult(true, "登录成功")
+            } catch (error: Exception) {
+                onResult(false, "登录失败，请检查用户 ID 或网络")
             }
         }
     }
 
-    fun logout() {
-        platformStorage.clearText("qq_id")
-        platformStorage.clearText("nickname")
-        platformStorage.clearText("avatar_url")
-        
-        isLoggedIn.value = false
-        qqId.value = ""
-        nickname.value = "未登录"
-        avatarUrl.value = ""
-        playlists.value = emptyList()
-        currentQueue.value = emptyList()
-        currentIndex.value = -1
-        currentSong.value = null
-        player.stop()
-
-        navigationStack.clear()
-        currentScreen.value = Screen.Login
+    fun logout(platform: MusicPlatform = selectedPlatform.value) {
+        platformStorage.clearText(if (platform == MusicPlatform.QQ) "qq_id" else "netease_id")
+        platformStorage.clearText("${platform.apiValue}_nickname")
+        platformStorage.clearText("${platform.apiValue}_avatar")
+        accountIds.value = accountIds.value - platform
+        if (selectedPlatform.value == platform) selectPlatform(platform)
     }
 
     fun loadUserPlaylists(qq: String) {
+        val platform = selectedPlatform.value
+        val request = ++accountRequest
         userPlaylistsLoading.value = true
-        
-        // 1. Immediately display cached text info synchronously
-        val cachedNickname = platformStorage.getText("nickname")
-        if (!cachedNickname.isNullOrEmpty()) {
-            nickname.value = cachedNickname
-        } else {
-            nickname.value = qq
-        }
-        val cachedAvatar = platformStorage.getText("avatar_url")
-        if (!cachedAvatar.isNullOrEmpty()) {
-            avatarUrl.value = cachedAvatar
-        }
-
         scope.launch {
-            // 2. Fetch and display cached playlists first
             try {
-                val cached = storage.getPlaylistsFromCache(qq)
-                if (cached != null) {
-                    playlists.value = cached
+                storage.getPlaylistsFromCache(platform.key(qq))?.let {
+                    if (request == accountRequest) playlists.value = it.map { list -> list.copy(source = platform) }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-
-            // 3. Fetch from network and refresh
-            try {
-                val response = ApiClient.getUserPlaylists(qq)
-                storage.savePlaylistsToCache(qq, response.playlist)
-                
-                platformStorage.saveText("nickname", response.username ?: qq)
-                platformStorage.saveText("avatar_url", response.avatarUrl ?: "")
-
-                playlists.value = response.playlist
-                nickname.value = response.username ?: qq
-                avatarUrl.value = response.avatarUrl ?: ""
-            } catch (e: Exception) {
-                // Network error: we keep showing the cached data that was loaded earlier.
-                e.printStackTrace()
+                val response = ApiClient.getUserPlaylists(qq, platform)
+                val lists = response.playlist.map { it.copy(source = platform) }
+                storage.savePlaylistsToCache(platform.key(qq), lists)
+                if (request == accountRequest) {
+                    playlists.value = lists
+                    nickname.value = response.username ?: qq
+                    avatarUrl.value = response.avatarUrl.orEmpty()
+                }
+            } catch (error: Exception) {
+                if (request == accountRequest && playlists.value.isEmpty()) showToast("载入歌单失败，请检查网络")
             } finally {
-                userPlaylistsLoading.value = false
+                if (request == accountRequest) userPlaylistsLoading.value = false
             }
         }
     }
-    fun setSoundQualityLevel(quality: String) {
-        soundQuality.value = quality
-        platformStorage.saveText("sound_quality", quality)
-        
-        // If playing, reload the song with new quality
-        currentSong.value?.let { playSong(it) }
+
+    fun setSoundQualityLevel(quality: String, platform: MusicPlatform = MusicPlatform.QQ) {
+        if (platform == MusicPlatform.NETEASE) neteaseQuality.value = quality else soundQuality.value = quality
+        platformStorage.saveText(if (platform == MusicPlatform.QQ) "sound_quality" else "netease_sound_quality", quality)
+        currentSong.value?.takeIf { it.source == platform }?.let {
+            if (!ListenTogetherState.isInRoom.value) {
+                savedPlaybackPositionMs.value = player.currentPositionMs.value
+                playSong(it)
+            }
+        }
     }
 
     fun setPlaybackMode(mode: PlaybackMode) {
@@ -569,7 +546,7 @@ object AppState {
                 error.printStackTrace()
                 return@launch
             }
-            if (currentSong.value?.id == song.id) {
+            if (currentSong.value?.cacheKey == song.cacheKey) {
                 lyricLines.value = lines
                 updateLyricIndex(player.currentPositionMs.value)
             }
@@ -730,6 +707,8 @@ object AppState {
 
     private fun playSong(song: Song) {
         clearStandaloneStreamingSource()
+        val request = playbackRequest
+        val quality = qualityFor(song)
         player.stop()
         lyricLines.value = emptyList()
         currentLyricIndex.value = -1
@@ -738,19 +717,21 @@ object AppState {
             try {
                 // Standalone playback always starts from the network immediately.
                 // Caching runs in the background and never delays AVPlayer preparation.
-                var remoteUrl = storage.getCachedRemoteUrl(song.id, soundQuality.value)
+                var remoteUrl = storage.getCachedRemoteUrl(song.cacheKey, quality)
                 if (remoteUrl == null) {
-                    val urlResponse = ApiClient.getSongUrl(song.id, soundQuality.value)
+                    val urlResponse = ApiClient.getSongUrl(song.id, quality, song.source)
                     val rawUrl = urlResponse.data.firstOrNull()?.url
+                    if (request != playbackRequest) return@launch
                     if (rawUrl.isNullOrEmpty()) {
                         nextSong() // skip on error
                         return@launch
                     }
                     remoteUrl = rawUrl
-                    storage.saveRemoteUrlToCache(song.id, soundQuality.value, rawUrl)
+                    storage.saveRemoteUrlToCache(song.cacheKey, quality, rawUrl)
                 }
-                val audioUrl = storage.getSongAudioUrl(song.id, remoteUrl, waitForCache = false)
-                standaloneStreamingSongId = song.id
+                val audioUrl = storage.getSongAudioUrl(song.audioKey(quality), remoteUrl, waitForCache = false)
+                if (request != playbackRequest) return@launch
+                standaloneStreamingSongId = song.cacheKey
                 standaloneStreamingUrl = remoteUrl
 
                 mediaSessionController.updateMetadata(
@@ -769,21 +750,21 @@ object AppState {
                 // Show ordinary lyrics first. TTML is a second-stage upgrade; when it
                 // finishes, replace the state so an already-open lyric page refreshes.
                 val ordinaryLines = loadOrdinaryLyrics(song)
-                if (currentSong.value?.id == song.id) {
+                if (request == playbackRequest && currentSong.value?.cacheKey == song.cacheKey) {
                     lyricLines.value = ordinaryLines
                 }
-                val ttmlResponse = try { ApiClient.getTtmlLyric(song.lyricMid) } catch (error: Exception) {
+                val ttmlResponse = try { ApiClient.getTtmlLyric(song.lyricMid, song.source) } catch (error: Exception) {
                     error.printStackTrace()
                     null
                 }
-                if (currentSong.value?.id == song.id) {
+                if (request == playbackRequest && currentSong.value?.cacheKey == song.cacheKey) {
                     lyricLines.value = applyTtmlLyrics(song, ordinaryLines, ttmlResponse)
                     updateLyricIndex(player.currentPositionMs.value)
                 }
                 updateCacheSizes()
 
                 // Save song metadata for cache management
-                storage.saveSongMetadata(song, soundQuality.value)
+                storage.saveSongMetadata(song, quality)
 
                 // Preload the next song
                 val next = getNextSong()
@@ -794,7 +775,7 @@ object AppState {
                 savePlaybackState()
             } catch (e: Exception) {
                 e.printStackTrace()
-                nextSong() // skip on error
+                if (request == playbackRequest) nextSong()
             }
         }
     }
@@ -830,39 +811,40 @@ object AppState {
     }
 
     fun preloadSong(song: Song) {
+        val quality = qualityFor(song)
         scope.launch {
             try {
                 // 1. Preload Cover Image
                 if (song.bestCoverUrl.isNotEmpty()) {
-                    storage.getCoverImageUrl(song.id, song.bestCoverUrl)
+                    storage.getCoverImageUrl(song.cacheKey, song.bestCoverUrl)
                 }
 
                 // 2. Save Song Metadata
-                storage.saveSongMetadata(song, soundQuality.value)
+                storage.saveSongMetadata(song, quality)
 
                 // 3. Preload Audio Link & File
-                val cachedLocalUrl = storage.getCachedSongUrl(song.id)
+                val cachedLocalUrl = storage.getCachedSongUrl(song.audioKey(quality))
                 if (cachedLocalUrl == null) {
-                    var remoteUrl = storage.getCachedRemoteUrl(song.id, soundQuality.value)
+                    var remoteUrl = storage.getCachedRemoteUrl(song.cacheKey, quality)
                     if (remoteUrl == null) {
-                        val urlResponse = ApiClient.getSongUrl(song.id, soundQuality.value)
+                        val urlResponse = ApiClient.getSongUrl(song.id, quality, song.source)
                         val rawUrl = urlResponse.data.firstOrNull()?.url
                         if (!rawUrl.isNullOrEmpty()) {
                             remoteUrl = rawUrl
-                            storage.saveRemoteUrlToCache(song.id, soundQuality.value, rawUrl)
+                            storage.saveRemoteUrlToCache(song.cacheKey, quality, rawUrl)
                         }
                     }
                     if (remoteUrl != null) {
-                        storage.getSongAudioUrl(song.id, remoteUrl, waitForCache = false)
+                        storage.getSongAudioUrl(song.audioKey(quality), remoteUrl, waitForCache = false)
                     }
                 }
 
                 // 4. Preload Lyrics
                 try {
-                    var lyricResponse = storage.getLyricFromCache(song.id)
+                    var lyricResponse = storage.getLyricFromCache(song.cacheKey)
                     if (lyricResponse == null) {
-                        lyricResponse = ApiClient.getSongLyric(song.id)
-                        storage.saveLyricToCache(song.id, lyricResponse)
+                        lyricResponse = ApiClient.getSongLyric(song.id, song.source)
+                        storage.saveLyricToCache(song.cacheKey, lyricResponse)
                     }
                 } catch (e: Exception) {
                     // Ignore lyric preloading errors
@@ -875,7 +857,7 @@ object AppState {
  
     suspend fun loadLyrics(song: Song): List<LyricLine> {
         val ordinaryLines = loadOrdinaryLyrics(song)
-        val ttmlResponse = try { ApiClient.getTtmlLyric(song.lyricMid) } catch (error: Exception) {
+        val ttmlResponse = try { ApiClient.getTtmlLyric(song.lyricMid, song.source) } catch (error: Exception) {
             error.printStackTrace()
             null
         }
@@ -883,15 +865,14 @@ object AppState {
     }
 
     private suspend fun loadOrdinaryLyrics(song: Song): List<LyricLine> {
-        var response = storage.getLyricFromCache(song.id)
+        var response = storage.getLyricFromCache(song.cacheKey)
         if (response == null) {
-            response = ApiClient.getSongLyric(song.id)
-            storage.saveLyricToCache(song.id, response)
+            response = ApiClient.getSongLyric(song.id, song.source)
+            storage.saveLyricToCache(song.cacheKey, response)
         }
-        return LyricParser.parse(
-            response = response,
-            removeQrcSongInfo = removeQrcSongInfo.value,
-        )
+        val parsed = LyricParser.parseWithFormat(response, removeQrcSongInfo.value)
+        lyricFormats.value = lyricFormats.value + (song.cacheKey to parsed.format)
+        return parsed.lines
     }
 
     private fun hasTtml(response: TtmlLyricResponse?): Boolean =
@@ -909,7 +890,8 @@ object AppState {
         val parsed = TtmlParser.parseAmll(response!!.content!!)
         if (parsed.lines.isEmpty()) return ordinaryLines
 
-        ttmlSongIds.value = ttmlSongIds.value + song.id
+        lyricFormats.value = lyricFormats.value + (song.cacheKey to LyricFormat.TTML)
+        ttmlSongIds.value = ttmlSongIds.value + song.cacheKey
         val author = parsed.metadata
             .firstOrNull { it.first == "ttmlAuthorGithubLogin" }
             ?.second
@@ -923,7 +905,7 @@ object AppState {
     }
 
     private fun updateLyricIndex(currentTimeMs: Long) {
-        val adjustedTime = currentTimeMs + lyricOffsetMs.value + lyricLeadMs.value // dynamic offset + dynamic early transition lead
+        val adjustedTime = currentTimeMs + lyricOffsetMs.value + currentLyricFormat().transitionLeadMs(lyricLeadMs.value) // dynamic offset + dynamic early transition lead
         val lines = lyricLines.value
         if (lines.isEmpty()) return
         

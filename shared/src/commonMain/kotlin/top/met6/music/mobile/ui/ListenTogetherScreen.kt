@@ -575,7 +575,7 @@ fun RoomLayout() {
                             ) {
                                 // Cover Image
                                 CachedImage(
-                                    songId = song.id,
+                                    songId = song.cacheKey,
                                     imageUrl = song.bestCoverUrl,
                                     modifier = Modifier
                                         .size(48.dp)

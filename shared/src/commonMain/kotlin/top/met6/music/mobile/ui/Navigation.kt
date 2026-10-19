@@ -23,7 +23,6 @@ import top.met6.music.mobile.state.Screen
 @Composable
 fun AppNavigation() {
     val currentScreen = AppState.currentScreen.value
-    val isLoggedIn = AppState.isLoggedIn.value
 
     // Handle system back button / gestures on Android
     val isBackEnabled = AppState.isFullScreenPlayer.value || AppState.navigationStack.isNotEmpty()
@@ -58,7 +57,6 @@ fun AppNavigation() {
                     label = "page transition",
                 ) { screen ->
                     when (screen) {
-                        is Screen.Login -> LoginScreen()
                         is Screen.Playlists -> PlaylistsScreen()
                         is Screen.PlaylistDetail -> PlaylistDetailScreen(playlist = screen.playlist)
                         is Screen.Settings -> SettingsScreen()
@@ -72,7 +70,7 @@ fun AppNavigation() {
         }
 
         // Float above the page content without taking layout space.
-        if (isLoggedIn && currentScreen != Screen.Login) {
+        if (AppState.currentSong.value != null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()

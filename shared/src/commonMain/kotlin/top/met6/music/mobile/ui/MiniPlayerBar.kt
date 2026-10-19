@@ -54,7 +54,7 @@ fun MiniPlayerBar() {
       ) {
         val coverUrl = song.bestCoverUrl
         CachedImage(
-            songId = song.id,
+            songId = song.cacheKey,
             imageUrl = coverUrl,
             modifier = Modifier
                 .size(44.dp)
@@ -128,7 +128,7 @@ fun MiniPlayerBar() {
                   ) {
                       Text("播放列表", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                       IconButton(onClick = {
-                          val index = AppState.currentQueue.value.indexOfFirst { it.id == AppState.currentSong.value?.id }
+                          val index = AppState.currentQueue.value.indexOfFirst { it.cacheKey == AppState.currentSong.value?.cacheKey }
                           if (index >= 0) scope.launch { queueListState.animateScrollToItem(index) }
                       }) {
                           Icon(Icons.Default.LocationOn, contentDescription = "定位当前歌曲", tint = Color.LightGray)

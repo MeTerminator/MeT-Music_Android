@@ -52,7 +52,7 @@ class CacheManager(private val storage: PlatformStorage) {
         try {
             val meta = CachedSongMetadata(song, quality, getCurrentTimeMs())
             val json = Json.encodeToString(meta)
-            storage.saveCacheFile("songs_metadata", song.id, json.encodeToByteArray())
+            storage.saveCacheFile("songs_metadata", song.audioKey(quality), json.encodeToByteArray())
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -73,15 +73,15 @@ class CacheManager(private val storage: PlatformStorage) {
         }
     }
 
-    suspend fun getCachedSongs(): List<Triple<Song, String, Long>> {
+    suspend fun getCachedSongs(): List<CachedSongEntry> {
         val songIds = storage.listCacheFiles("songs")
-        val result = mutableListOf<Triple<Song, String, Long>>()
+        val result = mutableListOf<CachedSongEntry>()
         for (songId in songIds) {
             val size = storage.getCacheFileSize("songs", songId)
-            val meta = getSongMetadata(songId)
+            val meta = getSongMetadata(songId.removeSuffix(".mp3"))
             val song = meta?.song ?: Song(id = songId, name = "未知歌曲 (ID: $songId)")
             val quality = meta?.quality ?: "unknown"
-            result.add(Triple(song, quality, size))
+            result.add(CachedSongEntry(song, quality, size, songId))
         }
         return result
     }
@@ -89,7 +89,7 @@ class CacheManager(private val storage: PlatformStorage) {
     suspend fun deleteCachedSong(songId: String): Boolean {
         val successSong = storage.deleteCacheFile("songs", songId)
         // Also clean up metadata
-        storage.deleteCacheFile("songs_metadata", songId)
+        storage.deleteCacheFile("songs_metadata", songId.removeSuffix(".mp3"))
         return successSong
     }
 
@@ -261,3 +261,5 @@ data class CachedSongMetadata(
     val quality: String,
     val cachedTimeMs: Long
 )
+
+data class CachedSongEntry(val song: Song, val quality: String, val size: Long, val cacheFile: String)

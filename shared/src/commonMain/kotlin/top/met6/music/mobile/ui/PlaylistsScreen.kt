@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import top.met6.music.mobile.models.MusicPlatform
 import top.met6.music.mobile.models.Playlist
 import top.met6.music.mobile.state.AppState
 import top.met6.music.mobile.state.Screen
@@ -40,7 +41,7 @@ fun PlaylistsScreen() {
                         val avatar = AppState.avatarUrl.value
                         if (avatar.isNotEmpty()) {
                             CachedImage(
-                                songId = "user_avatar",
+                                songId = "user_avatar_${AppState.selectedPlatform.value.apiValue}_${AppState.qqId.value}",
                                 imageUrl = avatar,
                                 modifier = Modifier
                                     .size(36.dp)
@@ -96,34 +97,40 @@ fun PlaylistsScreen() {
         },
         containerColor = DarkBackground
     ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp)
-        ) {
-            val list = AppState.playlists.value
+        Column(Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MusicPlatform.entries.forEach { platform ->
+                    FilterChip(selected = AppState.selectedPlatform.value == platform,
+                        onClick = { AppState.selectPlatform(platform) }, label = { Text(platform.title) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = CardBackground, labelColor = Color.White,
+                            selectedContainerColor = AppleMusicPink, selectedLabelColor = Color.White))
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                val list = AppState.playlists.value
 
-            if (list.isEmpty()) {
-                if (AppState.userPlaylistsLoading.value) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = AppleMusicPink)
+                if (list.isEmpty()) {
+                    if (AppState.userPlaylistsLoading.value) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = AppleMusicPink)
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(text = if (AppState.isLoggedIn.value) "没有找到歌单" else "在设置中登录${AppState.selectedPlatform.value.title}账号以载入歌单", color = Color.Gray, fontSize = 16.sp)
+                        }
                     }
                 } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(text = "没有找到歌单", color = Color.Gray, fontSize = 16.sp)
-                    }
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 160.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(list) { playlist ->
-                        PlaylistItem(playlist = playlist) {
-                            AppState.navigateTo(Screen.PlaylistDetail(playlist))
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 160.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(list) { playlist ->
+                            PlaylistItem(playlist = playlist) {
+                                AppState.navigateTo(Screen.PlaylistDetail(playlist))
+                            }
                         }
                     }
                 }
@@ -143,7 +150,7 @@ fun PlaylistItem(playlist: Playlist, onClick: () -> Unit) {
     ) {
         val coverUrl = playlist.bestCoverUrl
         CachedImage(
-            songId = "playlist_${playlist.id}",
+            songId = "playlist_${playlist.cacheKey}",
             imageUrl = coverUrl,
             modifier = Modifier
                 .fillMaxWidth()

@@ -29,7 +29,7 @@ import top.met6.music.mobile.state.AppState
 @Composable
 fun CacheManagerScreen() {
     val scope = rememberCoroutineScope()
-    var cachedSongs by remember { mutableStateOf<List<Triple<Song, String, Long>>>(emptyList()) }
+    var cachedSongs by remember { mutableStateOf<List<top.met6.music.mobile.storage.CachedSongEntry>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
     fun refreshCache() {
@@ -54,7 +54,7 @@ fun CacheManagerScreen() {
         return "$integerPart.$fracPad MB"
     }
 
-    val totalSize = cachedSongs.sumOf { it.third }
+    val totalSize = cachedSongs.sumOf { it.size }
     val totalCount = cachedSongs.size
 
     Scaffold(
@@ -133,7 +133,7 @@ fun CacheManagerScreen() {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
-                    items(cachedSongs) { (song, quality, size) ->
+                    items(cachedSongs) { (song, quality, size, cacheFile) ->
                         Card(
                             shape = RoundedCornerShape(10.dp),
                             colors = CardDefaults.cardColors(containerColor = CardBackground),
@@ -144,7 +144,7 @@ fun CacheManagerScreen() {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 CachedImage(
-                                    songId = song.id,
+                                    songId = song.cacheKey,
                                     imageUrl = song.bestCoverUrl,
                                     modifier = Modifier
                                         .size(48.dp)
@@ -221,7 +221,7 @@ fun CacheManagerScreen() {
                                 IconButton(
                                     onClick = {
                                         scope.launch {
-                                            AppState.storage.deleteCachedSong(song.id)
+                                            AppState.storage.deleteCachedSong(cacheFile)
                                             AppState.updateCacheSizes()
                                             refreshCache()
                                         }

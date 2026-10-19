@@ -35,18 +35,18 @@ fun PlaylistDetailScreen(playlist: Playlist) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(playlist.id) {
+    LaunchedEffect(playlist.cacheKey) {
         loadingState.value = true
         try {
-            val cached = AppState.storage.getPlaylistTracksFromCache(playlist.id)
+            val cached = AppState.storage.getPlaylistTracksFromCache(playlist.cacheKey)
             if (cached != null) {
                 songsState.value = cached
                 loadingState.value = false
             }
-            val response = ApiClient.getPlaylistTracks(playlist.id)
+            val response = ApiClient.getPlaylistTracks(playlist.id, platform = playlist.source)
             if (response.songs.isNotEmpty()) {
-                AppState.storage.savePlaylistTracksToCache(playlist.id, response.songs)
-                songsState.value = response.songs
+                AppState.storage.savePlaylistTracksToCache(playlist.cacheKey, response.songs.map { it.copy(source = playlist.source) })
+                songsState.value = response.songs.map { it.copy(source = playlist.source) }
                 AppState.updateCacheSizes()
             }
         } catch (e: Exception) {
@@ -67,9 +67,9 @@ fun PlaylistDetailScreen(playlist: Playlist) {
                 },
                 actions = {
                     IconButton(onClick = {
-                        val currentId = AppState.currentSong.value?.id
+                        val currentId = AppState.currentSong.value?.cacheKey
                         val songs = songsState.value
-                        val index = songs.indexOfFirst { it.id == currentId }
+                        val index = songs.indexOfFirst { it.cacheKey == currentId }
                         if (index >= 0) {
                             scope.launch {
                                 listState.animateScrollToItem(index + 1) // +1 for the header
@@ -148,7 +148,7 @@ fun PlaylistHeader(playlist: Playlist, onPlayAll: () -> Unit) {
     ) {
         val coverUrl = playlist.bestCoverUrl
         CachedImage(
-            songId = "playlist_${playlist.id}",
+            songId = "playlist_${playlist.cacheKey}",
             imageUrl = coverUrl,
             modifier = Modifier
                 .size(180.dp)
@@ -207,7 +207,7 @@ fun PlaylistHeader(playlist: Playlist, onPlayAll: () -> Unit) {
 
 @Composable
 fun SongRow(song: Song, index: Int, onClick: () -> Unit) {
-    val isCurrent = AppState.currentSong.value?.id == song.id
+    val isCurrent = AppState.currentSong.value?.cacheKey == song.cacheKey
     val hasTtml = song.hasTtml
     
     Row(
@@ -226,7 +226,7 @@ fun SongRow(song: Song, index: Int, onClick: () -> Unit) {
         
         val coverUrl = song.bestCoverUrl
         CachedImage(
-            songId = song.id,
+            songId = song.cacheKey,
             imageUrl = coverUrl,
             modifier = Modifier
                 .size(48.dp)

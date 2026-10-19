@@ -3,6 +3,16 @@ package top.met6.music.mobile.models
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+@Serializable
+enum class MusicPlatform(val title: String) {
+    @kotlinx.serialization.json.JsonNames("qq")
+    @SerialName("qqmusic") QQ("QQ 音乐"),
+    @SerialName("netease") NETEASE("网易云音乐");
+    val apiValue: String get() = if (this == NETEASE) "netease" else "qq"
+    fun key(id: String): String = if (this == QQ) id else "netease_$id"
+}
+
 @Serializable
 data class CreatorInfo(
     val nickname: String? = null,
@@ -19,6 +29,7 @@ data class CoverSizes(
 
 @Serializable
 data class Playlist(
+    val source: MusicPlatform = MusicPlatform.QQ,
     val id: String,
     val name: String,
     @SerialName("coverImgUrl") val cover: String? = null,
@@ -28,6 +39,8 @@ data class Playlist(
     val description: String? = null,
     val creator: CreatorInfo? = null
 ) {
+    val cacheKey: String get() = source.key(id)
+
     val bestCoverUrl: String
         get() = cover ?: coverSize?.l ?: coverSize?.m ?: coverSize?.s ?: ""
 }
@@ -47,6 +60,7 @@ data class Album(
 
 @Serializable
 data class Song(
+    val source: MusicPlatform = MusicPlatform.QQ,
     val id: String,
     val mid: String? = null,
     val name: String,
@@ -57,9 +71,12 @@ data class Song(
     @SerialName("dt") val durationMs: Long = 0,
     val ttml: Int = 0
 ) {
+    fun audioKey(quality: String): String = "${cacheKey}_$quality"
     val hasTtml: Boolean get() = ttml == 1
     val lyricMid: String
         get() = mid?.takeIf(String::isNotBlank) ?: id
+
+    val cacheKey: String get() = source.key(id)
 
     val bestCoverUrl: String
         get() = cover ?: coverSize?.l ?: coverSize?.m ?: coverSize?.s ?: album?.picUrl ?: ""
@@ -77,6 +94,7 @@ data class Song(
 
 @Serializable
 data class UserPlaylistsResponse(
+    val code: Int = 200,
     val playlist: List<Playlist> = emptyList(),
     val username: String? = null,
     val avatarUrl: String? = null
@@ -109,7 +127,11 @@ data class LyricResponse(
     val lrctrans: String? = null,
     val qrc: String? = null,
     val qrctrans: String? = null,
-    val qrcroma: String? = null
+    val qrcroma: String? = null,
+    val yrc: String? = null,
+    val ytlrc: String? = null,
+    val yromalrc: String? = null,
+    val romalrc: String? = null
 )
 
 @Serializable

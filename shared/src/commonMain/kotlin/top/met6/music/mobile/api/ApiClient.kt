@@ -44,6 +44,7 @@ val httpClient = HttpClient {
     install(ContentNegotiation) {
         json(Json {
             ignoreUnknownKeys = true
+            coerceInputValues = true
             prettyPrint = true
             isLenient = true
         })
@@ -55,49 +56,55 @@ object ApiClient {
     private const val BASE_URL = "https://music.met6.top:444/api/web"
     private const val ROOM_BASE_URL = "https://music.met6.top:444/api/room"
 
-    suspend fun getUserPlaylists(uid: String): UserPlaylistsResponse {
+    suspend fun getUserPlaylists(uid: String, platform: MusicPlatform = MusicPlatform.QQ): UserPlaylistsResponse {
         val timestamp = (0..99999999).random().toString()
         return httpClient.get("$BASE_URL/user/playlist") {
+            parameter("platform", platform.apiValue)
             parameter("uid", uid)
             parameter("limit", 100)
             parameter("timestamp", timestamp)
         }.body()
     }
 
-    suspend fun getPlaylistDetail(id: String): PlaylistDetail {
+    suspend fun getPlaylistDetail(id: String, platform: MusicPlatform = MusicPlatform.QQ): PlaylistDetail {
         val timestamp = (0..99999999).random().toString()
         return httpClient.get("$BASE_URL/playlist/detail") {
+            parameter("platform", platform.apiValue)
             parameter("id", id)
             parameter("timestamp", timestamp)
         }.body()
     }
 
-    suspend fun getPlaylistTracks(id: String, limit: Int = 500): PlaylistTracksResponse {
+    suspend fun getPlaylistTracks(id: String, limit: Int = 500, platform: MusicPlatform = MusicPlatform.QQ): PlaylistTracksResponse {
         val timestamp = (0..99999999).random().toString()
         return httpClient.get("$BASE_URL/playlist/track/all") {
+            parameter("platform", platform.apiValue)
             parameter("id", id)
             parameter("limit", limit)
             parameter("timestamp", timestamp)
         }.body()
     }
 
-    suspend fun getSongUrl(id: String, level: String = "hq"): SongUrlResponse {
+    suspend fun getSongUrl(id: String, level: String = "hq", platform: MusicPlatform = MusicPlatform.QQ): SongUrlResponse {
         val timestamp = (0..99999999).random().toString()
         return httpClient.get("$BASE_URL/song/url/v1") {
+            parameter("platform", platform.apiValue)
             parameter("id", id)
             parameter("level", level)
             parameter("timestamp", timestamp)
         }.body()
     }
 
-    suspend fun getSongLyric(id: String): LyricResponse {
+    suspend fun getSongLyric(id: String, platform: MusicPlatform = MusicPlatform.QQ): LyricResponse {
         return httpClient.get("$BASE_URL/lyric/new") {
+            parameter("platform", platform.apiValue)
             parameter("id", id)
         }.body()
     }
 
-    suspend fun getTtmlLyric(mid: String): TtmlLyricResponse {
+    suspend fun getTtmlLyric(mid: String, platform: MusicPlatform = MusicPlatform.QQ): TtmlLyricResponse {
         return httpClient.get("$BASE_URL/lyric/ttml") {
+            parameter("platform", platform.apiValue)
             parameter("mid", mid)
         }.body()
     }

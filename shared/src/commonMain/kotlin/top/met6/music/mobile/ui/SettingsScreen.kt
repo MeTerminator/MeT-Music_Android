@@ -10,7 +10,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import top.met6.music.mobile.models.MusicPlatform
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,117 +57,10 @@ fun SettingsScreen() {
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // User Profile Section
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    val avatar = AppState.avatarUrl.value
-                    if (avatar.isNotEmpty()) {
-                        CachedImage(
-                            songId = "user_avatar",
-                            imageUrl = avatar,
-                            modifier = Modifier
-                                .size(54.dp)
-                                .clip(CircleShape)
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(54.dp)
-                                .clip(CircleShape)
-                                            .background(Color.Gray)
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.width(16.dp))
-                    
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = AppState.nickname.value,
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "QQ: ${AppState.qqId.value}",
-                            color = Color.Gray,
-                            fontSize = 13.sp
-                        )
-                    }
-                    
-                    Button(
-                        onClick = { AppState.logout() },
-                        colors = ButtonDefaults.buttonColors(containerColor = AppleMusicPink),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp)
-                    ) {
-                        Text(text = "登出", color = Color.White, fontSize = 13.sp)
-                    }
-                }
+            MusicPlatform.entries.forEach { platform ->
+                PlatformAccountSettings(platform)
+                Spacer(Modifier.height(20.dp))
             }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Sound Quality Section
-            Text(
-                text = "音质选择",
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
-            )
-            
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    val qualities = listOf(
-                        Triple("web", "普通 WEB", "在线流媒体音质"),
-                        Triple("hq", "极高 HQ", "近 CD 品质的细节体验，最高 320kbps"),
-                        Triple("sq", "无损 SQ", "高保真无损音质，最高 48kHz/24bit"),
-                        Triple("rs", "高分辨率音源 Hi-Res", "索尼高品质音乐标准，高于 44.1kHz/16bit"),
-                        Triple("dts", "杜比 5.1 声道", "六声道环绕声，使人产生犹如身临音乐厅的感觉"),
-                        Triple("q360v1", "臻品全景声 V1", "独家自研空间音频，V1 版本，立体声"),
-                        Triple("q360v2", "臻品全景声 V2", "独家自研空间音频，V2 版本，多声道"),
-                        Triple("qai", "臻品母带", "还原声音细节，让声音还原更加极致")
-                    )
-                    
-                    qualities.forEach { (key, label, tip) ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { AppState.setSoundQualityLevel(key) }
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            RadioButton(
-                                selected = AppState.soundQuality.value == key,
-                                onClick = { AppState.setSoundQualityLevel(key) },
-                                colors = RadioButtonDefaults.colors(selectedColor = AppleMusicPink)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(text = label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                Text(text = tip, color = Color.Gray, fontSize = 11.sp)
-                            }
-                        }
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
             // Lyric Offset Section
             Text(
                 text = "歌词设置",
@@ -240,7 +134,7 @@ fun SettingsScreen() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "提前切换时间 (换行灵敏度)",
+                            text = "QRC / YRC 提前步进 (换行灵敏度)",
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
@@ -388,7 +282,7 @@ fun SettingsScreen() {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "去除 QRC 歌曲信息",
+                                text = "去除 QRC / YRC 歌曲信息",
                                 color = Color.White,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -614,6 +508,61 @@ fun CacheRow(title: String, sizeMb: Double, onClear: () -> Unit) {
             contentPadding = PaddingValues(horizontal = 12.dp)
         ) {
             Text(text = "清除", fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
+private fun PlatformAccountSettings(platform: MusicPlatform) {
+    var input by remember(platform) { mutableStateOf("") }
+    var busy by remember(platform) { mutableStateOf(false) }
+    var error by remember(platform) { mutableStateOf("") }
+    val uid = AppState.accountIds.value[platform].orEmpty()
+    val qqLevels = listOf("web" to "标准", "hq" to "高品质", "sq" to "无损", "rs" to "Hi-Res",
+        "dts" to "DTS", "q360v1" to "臻品全景声 V1", "q360v2" to "臻品全景声 V2", "qai" to "臻品母带")
+    val neteaseLevels = listOf("standard" to "标准", "higher" to "较高", "exhigh" to "极高", "lossless" to "无损",
+        "hires" to "Hi-Res", "jyeffect" to "高清臻音", "dolby" to "杜比全景声", "vivid" to "臻音全景声",
+        "jymaster" to "超清母带", "sky" to "沉浸环绕声")
+    Card(colors = CardDefaults.cardColors(containerColor = CardBackground)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(platform.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(if (uid.isEmpty()) "未登录" else "用户 ID：$uid", color = Color.LightGray)
+            OutlinedTextField(value = input, onValueChange = { input = it }, enabled = !busy,
+                label = { Text(if (platform == MusicPlatform.QQ) "QQ 号" else "网易云用户 ID") },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                    focusedLabelColor = AppleMusicPink, unfocusedLabelColor = Color.LightGray,
+                    focusedBorderColor = AppleMusicPink, unfocusedBorderColor = Color.Gray,
+                    cursorColor = AppleMusicPink))
+            if (platform == MusicPlatform.NETEASE) Text("个人主页链接中 id= 后的数字。用于读取公开资料和歌单，VIP 播放取决于服务器账号权益。", color = Color.Gray, fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = AppleMusicPink), onClick = {
+                    busy = true
+                    error = ""
+                    AppState.loginAccount(platform, input) { success, message ->
+                        busy = false
+                        if (success) { input = ""; AppState.showToast(message) } else error = message
+                    }
+                }) { Text(if (busy) "登录中…" else if (uid.isEmpty()) "登录" else "切换账号") }
+                if (uid.isNotEmpty()) TextButton(enabled = !busy, onClick = { AppState.logout(platform) }) { Text("退出登录") }
+            }
+            if (error.isNotEmpty()) Text(error, color = MaterialTheme.colorScheme.error)
+            val quality = if (platform == MusicPlatform.QQ) AppState.soundQuality.value else AppState.neteaseQuality.value
+            Text("${platform.title}音质", color = Color.White, fontWeight = FontWeight.SemiBold)
+            var expanded by remember { mutableStateOf(false) }
+            val levels = if (platform == MusicPlatform.QQ) qqLevels else neteaseLevels
+            Box {
+                OutlinedButton(onClick = { expanded = true }) { Text(levels.firstOrNull { it.first == quality }?.second ?: quality) }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    levels.forEach { (key, title) ->
+                        DropdownMenuItem(text = { Text(title) }, onClick = {
+                            AppState.setSoundQualityLevel(key, platform); expanded = false
+                        })
+                    }
+                }
+            }
+            Text("实际音质取决于歌曲、账号权益和设备。", color = Color.Gray, fontSize = 12.sp)
         }
     }
 }
