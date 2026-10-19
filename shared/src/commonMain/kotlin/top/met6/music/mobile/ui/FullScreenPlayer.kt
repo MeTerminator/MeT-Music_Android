@@ -776,6 +776,9 @@ fun LyricsView(showTranslation: Boolean = true) {
         style = AppleMusicLyricPlayerStyle(
             fontSize = AppState.lyricFontSize.value.sp,
             lineWidthFraction = 1f,
+            // The player already dims inactive groups to 20%. Avoid multiplying
+            // that by the default 20% glyph mask for line-timed LRC (4% total).
+            inactiveMaskAlpha = if (format == LyricFormat.LRC) 1f else 0.2f,
         ),
         fontFamily = lyricFontFamily,
         modifier = Modifier.fillMaxSize(),

@@ -133,9 +133,9 @@ object AppState {
     val lyricCacheSize = mutableStateOf(0.0)
     val currentThemeColor = mutableStateOf(Color(0xFF1E1E24))
     val lyricOffsetMs = mutableStateOf(0L)
-    val lyricLeadMs = mutableStateOf(300L)
-    val lyricFontSize = mutableStateOf(28)
-    val translationFontSize = mutableStateOf(14)
+    val lyricLeadMs = mutableStateOf(100L)
+    val lyricFontSize = mutableStateOf(32)
+    val translationFontSize = mutableStateOf(16)
     val useSpotifyFont = mutableStateOf(false)
     val removeQrcSongInfo = mutableStateOf(true)
 
@@ -330,23 +330,23 @@ object AppState {
 
         val savedLead = platformStorage.getText("lyric_lead")
         if (!savedLead.isNullOrEmpty()) {
-            lyricLeadMs.value = savedLead.toLongOrNull() ?: 300L
+            lyricLeadMs.value = savedLead.toLongOrNull() ?: 100L
         } else {
-            lyricLeadMs.value = 300L
+            lyricLeadMs.value = 100L
         }
 
         val savedLyricSize = platformStorage.getText("lyric_font_size")
         if (!savedLyricSize.isNullOrEmpty()) {
-            lyricFontSize.value = savedLyricSize.toIntOrNull() ?: 28
+            lyricFontSize.value = savedLyricSize.toIntOrNull() ?: 32
         } else {
-            lyricFontSize.value = 28
+            lyricFontSize.value = 32
         }
 
         val savedTranslationSize = platformStorage.getText("translation_font_size")
         if (!savedTranslationSize.isNullOrEmpty()) {
-            translationFontSize.value = savedTranslationSize.toIntOrNull() ?: 14
+            translationFontSize.value = savedTranslationSize.toIntOrNull() ?: 16
         } else {
-            translationFontSize.value = 14
+            translationFontSize.value = 16
         }
 
         val savedSpotifyFont = platformStorage.getText("use_spotify_font")
@@ -870,7 +870,7 @@ object AppState {
             response = ApiClient.getSongLyric(song.id, song.source)
             storage.saveLyricToCache(song.cacheKey, response)
         }
-        val parsed = LyricParser.parseWithFormat(response, removeQrcSongInfo.value)
+        val parsed = LyricParser.parseWithFormat(response, removeQrcSongInfo.value, song)
         lyricFormats.value = lyricFormats.value + (song.cacheKey to parsed.format)
         return parsed.lines
     }

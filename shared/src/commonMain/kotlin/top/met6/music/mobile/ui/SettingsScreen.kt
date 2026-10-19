@@ -171,7 +171,7 @@ fun SettingsScreen() {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "无延迟 0ms", color = Color.Gray, fontSize = 11.sp)
-                        Text(text = "默认 +300ms", color = Color.Gray, fontSize = 11.sp)
+                        Text(text = "默认 +100ms", color = Color.Gray, fontSize = 11.sp)
                         Text(text = "较早 +1000ms", color = Color.Gray, fontSize = 11.sp)
                     }
                     
@@ -220,7 +220,7 @@ fun SettingsScreen() {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "小 (14sp)", color = Color.Gray, fontSize = 11.sp)
-                        Text(text = "默认 (28sp)", color = Color.Gray, fontSize = 11.sp)
+                        Text(text = "默认 (32sp)", color = Color.Gray, fontSize = 11.sp)
                         Text(text = "大 (42sp)", color = Color.Gray, fontSize = 11.sp)
                     }
                     
@@ -269,7 +269,7 @@ fun SettingsScreen() {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "小 (10sp)", color = Color.Gray, fontSize = 11.sp)
-                        Text(text = "默认 (14sp)", color = Color.Gray, fontSize = 11.sp)
+                        Text(text = "默认 (16sp)", color = Color.Gray, fontSize = 11.sp)
                         Text(text = "大 (22sp)", color = Color.Gray, fontSize = 11.sp)
                     }
 

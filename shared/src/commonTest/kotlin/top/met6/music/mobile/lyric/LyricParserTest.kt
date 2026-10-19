@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import top.met6.music.mobile.models.LyricResponse
+import top.met6.music.mobile.models.Song
 
 class LyricParserTest {
 
@@ -48,7 +49,7 @@ class LyricParserTest {
 [23501,4848]绞(23501,304)断(23805,357)的(24162,432)弦 (24594,795)能(25695,255)否(25950,465)重(26415,254)新(26669,357)演(27026,458)奏(27484,865)""",
         )
 
-        val lines = LyricParser.parse(response)
+        val lines = LyricParser.parse(response, song = Song(id = "test", name = "潮声回响"))
 
         assertEquals(1, lines.size)
         assertEquals(23501L, lines.single().startTime)
@@ -56,7 +57,7 @@ class LyricParserTest {
     }
 
     @Test
-    fun parseQrcRemovesConsecutiveUniformlyTimedInformationLines() {
+    fun parseQrcRemovesCreditHeadersAndKeepsOrdinaryColons() {
         val response = LyricResponse(
             qrc = """[0,700]歌(0,100)手(100,100) (200,100)-(300,100) 歌(400,100)名(500,100)
 [1000,700]作(1000,100)词(1100,100)：(1200,100)某(1300,100)某(1400,100)
