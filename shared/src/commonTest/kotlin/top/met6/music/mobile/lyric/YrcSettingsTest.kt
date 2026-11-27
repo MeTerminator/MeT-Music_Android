@@ -13,14 +13,17 @@ class YrcSettingsTest {
         assertEquals(listOf("你好"), parsed.lines.map { it.text })
         assertEquals("Hello", parsed.lines.single().translatedLyric)
         assertEquals(3, LyricParser.parse(response, removeQrcSongInfo = false).size)
-        val advanced = applyTransitionLead(parsed.lines, parsed.format.transitionLeadMs(250)).single()
-        assertEquals(1750L, advanced.startTime)
-        assertEquals(2000L, advanced.words.first().startTime)
-        assertEquals(3000L, advanced.endTime)
-        assertEquals(parsed.lines.single().words, advanced.words)
+        val line = parsed.lines.single()
+        assertEquals(2000L, line.words.first().startTime)
+        assertEquals(3000L, line.endTime)
+        assertEquals(250L, parsed.format.transitionLeadMs(250))
+        assertFalse(parsed.format.holdsAdjacentLines)
         assertEquals(250L, LyricFormat.QRC.transitionLeadMs(250))
+        assertTrue(LyricFormat.QRC.holdsAdjacentLines)
         assertEquals(0L, LyricFormat.LRC.transitionLeadMs(250))
-        assertEquals(0L, LyricFormat.TTML.transitionLeadMs(250))
+        assertFalse(LyricFormat.LRC.holdsAdjacentLines)
+        assertEquals(250L, LyricFormat.TTML.transitionLeadMs(250))
+        assertTrue(LyricFormat.TTML.holdsAdjacentLines)
     }
 
     @Test fun allMetadataStaysEmptyAndInvalidYrcFallsBackToLrc() {
@@ -32,11 +35,17 @@ class YrcSettingsTest {
         assertEquals("正文", fallback.lines.single().text)
     }
 
-    @Test fun earlyTransitionDoesNotOverlapPreviousVocals() {
-        val lines = LyricParser.parse(LyricResponse(yrc = "[1000,1000](1000,1000,0)一\n[2100,1000](2100,1000,0)二"))
-        val advanced = applyTransitionLead(lines, 500)
-        assertEquals(2000L, advanced[1].startTime)
-        assertEquals(2100L, advanced[1].words.first().startTime)
-        assertEquals(lines, applyTransitionLead(lines, 0))
+    @Test fun qrcTimingOnlyRowsDoNotBecomeVisibleLyrics() {
+        val parsed = LyricParser.parseWithFormat(LyricResponse(
+            qrc = "[1000,1000](1000,1000)\n[2200,800]正(2200,400)文(2600,400)",
+        ))
+        assertEquals(LyricFormat.QRC, parsed.format)
+        assertEquals(listOf("正文"), parsed.lines.map { it.text })
+
+        val fallback = LyricParser.parseWithFormat(LyricResponse(
+            qrc = "[1000,1000](1000,1000)",
+            lrc = "[00:01.000]正文",
+        ))
+        assertEquals(LyricFormat.LRC, fallback.format)
     }
 }

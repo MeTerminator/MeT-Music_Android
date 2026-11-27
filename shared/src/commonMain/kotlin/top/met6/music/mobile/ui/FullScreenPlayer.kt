@@ -39,7 +39,6 @@ import androidx.compose.ui.text.font.FontFamily
 import top.met6.amll.AppleMusicLyricPlayer
 import top.met6.amll.OptimizeLyricOptions
 import top.met6.music.mobile.lyric.LyricFormat
-import top.met6.music.mobile.lyric.applyTransitionLead
 import top.met6.amll.AppleMusicLyricPlayerStyle
 import met_music_android.shared.generated.resources.Res
 import met_music_android.shared.generated.resources.spotify_mix
@@ -760,21 +759,23 @@ fun LyricsView(showTranslation: Boolean = true) {
     }
 
     val format = AppState.currentLyricFormat()
-    val isWordTimed = format == LyricFormat.QRC || format == LyricFormat.YRC
-    val leadMs = format.transitionLeadMs(AppState.lyricLeadMs.value)
-    val displayLines = remember(lines, leadMs, isWordTimed) {
-        if (isWordTimed) applyTransitionLead(lines, leadMs) else lines
-    }
     AppleMusicLyricPlayer(
-        lyricLines = displayLines,
-        optimizeOptions = OptimizeLyricOptions(resetLineTimestamps = !isWordTimed, tryAdvanceStartTime = !isWordTimed),
-        // Preserve the pre-AMLL contract: lyrics consume the exact same media clock
-        // shown by the scrubber and used by AppState, with no route-specific clock.
+        lyricLines = lines,
+        optimizeOptions = OptimizeLyricOptions(
+            resetLineTimestamps = false,
+            tryAdvanceStartTime = false,
+        ),
+        // Row anticipation is configured separately from the media clock used by the karaoke mask.
         currentTimeMs = AppState.player.currentPositionMs.value + AppState.lyricOffsetMs.value,
         isPlaying = AppState.player.isPlaying.value,
         showTranslation = showTranslation,
         style = AppleMusicLyricPlayerStyle(
             fontSize = AppState.lyricFontSize.value.sp,
+            lineTransitionLeadMs = format.transitionLeadMs(AppState.lyricLeadMs.value),
+            holdsAdjacentLines = format.holdsAdjacentLines,
+            lineTimedLyrics = format == LyricFormat.LRC,
+            userScrollResumeDelayMs = 3_000,
+            playbackDiscontinuityRevision = AppState.player.playbackDiscontinuityRevision,
             lineWidthFraction = 1f,
             // The player already dims inactive groups to 20%. Avoid multiplying
             // that by the default 20% glyph mask for line-timed LRC (4% total).
@@ -786,9 +787,7 @@ fun LyricsView(showTranslation: Boolean = true) {
             Text(text = "暂无歌词", color = Color.Gray, fontSize = 16.sp)
         },
         onLineClick = { line ->
-            // `line.startTime` may be advanced by the lyric optimizer (up to 600 ms)
-            // to make the visual transition begin early. Seeking must use the first
-            // real timed word, otherwise the audio lands before the selected lyric.
+            // Seek to the first sung word even when a row receives focus early.
             val lyricPosition = line.words.firstOrNull { it.word.isNotBlank() }?.startTime
                 ?: line.startTime
             val targetPosition = lyricPosition - AppState.lyricOffsetMs.value

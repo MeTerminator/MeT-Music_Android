@@ -11,6 +11,8 @@ interface AudioPlayer {
     val currentPositionMs: State<Long>
     /** Platform presentation clock used by time-synchronized UI such as lyrics. */
     val presentationPositionMs: State<Long>
+    /** Changes when an explicit seek or media reset invalidates lyric interpolation. */
+    val playbackDiscontinuityRevision: Long get() = 0L
     val durationMs: State<Long>
     val volume: State<Float>
 

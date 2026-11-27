@@ -134,7 +134,7 @@ fun SettingsScreen() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "QRC / YRC 提前步进 (换行灵敏度)",
+                            text = "QRC / YRC / TTML 提前步进",
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold

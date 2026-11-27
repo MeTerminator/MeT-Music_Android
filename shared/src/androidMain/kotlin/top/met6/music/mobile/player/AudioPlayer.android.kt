@@ -32,6 +32,8 @@ class AndroidAudioPlayer(private val context: PlatformContext) : AudioPlayer {
     private val _currentPositionMs = mutableStateOf(0L)
     override val currentPositionMs: State<Long> = _currentPositionMs
     override val presentationPositionMs: State<Long> = _currentPositionMs
+    private val _playbackDiscontinuityRevision = mutableStateOf(0L)
+    override val playbackDiscontinuityRevision: Long get() = _playbackDiscontinuityRevision.value
     
     private val _durationMs = mutableStateOf(0L)
     override val durationMs: State<Long> = _durationMs
@@ -163,6 +165,7 @@ class AndroidAudioPlayer(private val context: PlatformContext) : AudioPlayer {
         _isPlaying.value = false
         _isReady.value = false
         _currentPositionMs.value = 0L
+        _playbackDiscontinuityRevision.value++
         _durationMs.value = 0L
     }
 
@@ -171,6 +174,7 @@ class AndroidAudioPlayer(private val context: PlatformContext) : AudioPlayer {
             if (_isReady.value) {
                 player.seekTo(positionMs)
                 _currentPositionMs.value = positionMs
+                _playbackDiscontinuityRevision.value++
             }
         }
     }

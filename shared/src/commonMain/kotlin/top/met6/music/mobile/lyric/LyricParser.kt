@@ -5,8 +5,13 @@ import top.met6.amll.LyricWord
 import top.met6.music.mobile.models.LyricResponse
 import top.met6.music.mobile.models.Song
 
-enum class LyricFormat { LRC, QRC, YRC, TTML;
-    fun transitionLeadMs(configuredMs: Long): Long = if (this == QRC || this == YRC) configuredMs else 0L
+enum class LyricFormat {
+    LRC, QRC, YRC, TTML;
+
+    val holdsAdjacentLines: Boolean get() = this == QRC || this == TTML
+
+    fun transitionLeadMs(configuredMs: Long): Long =
+        if (holdsAdjacentLines || this == YRC) configuredMs else 0L
 }
 
 data class ParsedLyric(val lines: List<LyricLine>, val format: LyricFormat)
@@ -90,13 +95,18 @@ object LyricParser {
             val lineEnd = lineStart + lineMatch.groupValues[2].toLong()
             val content = raw.substring(lineMatch.value.length).trim()
             if (content.isEmpty()) return@mapNotNull null
-            val words = wordTime.findAll(content).mapNotNull { match ->
+            val matches = wordTime.findAll(content).toList()
+            val words = matches.mapNotNull { match ->
                 val text = decodeEntities(match.groupValues[1])
                 if (text.isEmpty()) null else {
                     val start = match.groupValues[2].toLong()
                     LyricWord(start, start + match.groupValues[3].toLong(), text)
                 }
-            }.toList().ifEmpty { listOf(LyricWord(lineStart, lineEnd, decodeEntities(content))) }
+            }.ifEmpty {
+                if (matches.isEmpty()) listOf(LyricWord(lineStart, lineEnd, decodeEntities(content)))
+                else emptyList()
+            }
+            if (words.none { it.word.isNotBlank() }) return@mapNotNull null
             LyricLine(words = words, startTime = lineStart, endTime = lineEnd)
         }
     }
